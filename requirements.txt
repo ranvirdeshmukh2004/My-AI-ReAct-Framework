@@ -1,0 +1,28 @@
+# ============================================
+# ReAct AI Agent — Dependencies
+# ============================================
+
+# Frontend
+streamlit>=1.30.0
+
+# HTTP client for OpenRouter API
+httpx>=0.25.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Web search (free, no API key needed)
+duckduckgo-search>=7.0.0
+
+# Safe math evaluation
+sympy>=1.12
+
+# PDF reading
+PyPDF2>=3.0.0
+
+# Database
+pydantic>=2.0.0
+
+# Optional: FastAPI backend
+fastapi>=0.104.0
+uvicorn>=0.24.0

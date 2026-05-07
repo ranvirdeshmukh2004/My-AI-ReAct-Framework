@@ -1,0 +1,501 @@
+"""
+app.py — AI Agent Frontend (Streamlit)
+========================================
+A premium, dark-themed chat interface for the AI Agent.
+"""
+
+import os
+import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# ============================================
+# Page Config
+# ============================================
+st.set_page_config(
+    page_title="AI Agent",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ============================================
+# Premium Dark Theme CSS
+# ============================================
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* === Global === */
+.stApp { font-family: 'Inter', sans-serif; }
+
+/* === Hero Header === */
+.hero {
+    text-align: center;
+    padding: 2.5rem 1rem 1.5rem;
+    position: relative;
+}
+.hero::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+}
+.hero h1 {
+    font-size: 2.6rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #818cf8 0%, #c084fc 50%, #f472b6 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin: 0;
+    letter-spacing: -0.02em;
+}
+.hero .subtitle {
+    color: #64748b;
+    font-size: 0.95rem;
+    font-weight: 400;
+    margin-top: 0.4rem;
+}
+.hero .badge-row {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+}
+.hero .hbadge {
+    background: rgba(99,102,241,0.1);
+    border: 1px solid rgba(99,102,241,0.2);
+    color: #a5b4fc;
+    padding: 0.3rem 0.8rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+/* === Sidebar === */
+.sb-logo {
+    text-align: center;
+    padding: 1.2rem 0 0.5rem;
+}
+.sb-logo .icon { font-size: 2.2rem; }
+.sb-logo .title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #818cf8, #c084fc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-top: 0.15rem;
+}
+.sb-section {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #818cf8;
+    margin: 1rem 0 0.4rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+.sb-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 0.55rem 0.75rem;
+    margin-bottom: 0.35rem;
+    transition: all 0.2s ease;
+}
+.sb-card:hover {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(129,140,248,0.3);
+}
+.sb-card .name {
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: #e2e8f0;
+}
+.sb-card .desc {
+    font-size: 0.68rem;
+    color: #64748b;
+    margin-top: 0.15rem;
+    line-height: 1.4;
+}
+.model-card {
+    background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(192,132,252,0.08));
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+}
+.model-card .dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #34d399;
+    margin-right: 6px;
+    animation: blink 2s ease-in-out infinite;
+}
+@keyframes blink {
+    0%,100% { opacity: 1; } 50% { opacity: 0.4; }
+}
+.model-card .mname {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: #e2e8f0;
+}
+.model-card .mprov {
+    font-size: 0.7rem;
+    color: #64748b;
+}
+.divider {
+    border: none;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    margin: 0.75rem 0;
+}
+
+/* === Reasoning Trace === */
+.trace-step {
+    background: rgba(255,255,255,0.02);
+    border-left: 3px solid transparent;
+    padding: 0.65rem 0.9rem;
+    margin: 0.3rem 0;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.82rem;
+    line-height: 1.55;
+}
+.trace-step.thought { border-left-color: #c084fc; }
+.trace-step.action { border-left-color: #38bdf8; }
+.trace-step.observation { border-left-color: #34d399; }
+.trace-label {
+    font-weight: 700;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.2rem;
+}
+.trace-label.thought { color: #c084fc; }
+.trace-label.action { color: #38bdf8; }
+.trace-label.observation { color: #34d399; }
+.tool-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: rgba(56,189,248,0.12);
+    border: 1px solid rgba(56,189,248,0.25);
+    color: #38bdf8;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+.step-num {
+    color: #475569;
+    font-size: 0.65rem;
+    font-weight: 500;
+    text-align: right;
+    margin-top: 0.15rem;
+}
+
+/* === Welcome State === */
+.welcome-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+    max-width: 600px;
+    margin: 1.5rem auto;
+}
+.welcome-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: left;
+}
+.welcome-card:hover {
+    background: rgba(99,102,241,0.08);
+    border-color: rgba(129,140,248,0.3);
+    transform: translateY(-1px);
+}
+.welcome-card .wicon { font-size: 1.3rem; margin-bottom: 0.35rem; }
+.welcome-card .wtitle {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+.welcome-card .wdesc {
+    font-size: 0.7rem;
+    color: #64748b;
+    margin-top: 0.15rem;
+}
+
+/* === Footer === */
+.footer {
+    text-align: center;
+    padding: 1.5rem 0 0.75rem;
+    color: #334155;
+    font-size: 0.7rem;
+    letter-spacing: 0.02em;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+# ============================================
+# Session State
+# ============================================
+def init_session_state():
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    if "agent" not in st.session_state:
+        from agent.react_agent import ReactAgent
+        st.session_state.agent = ReactAgent()
+    if "session_id" not in st.session_state:
+        from agent.memory import ConversationMemory
+        st.session_state.session_id = ConversationMemory.new_session_id()
+    if "uploaded_file_path" not in st.session_state:
+        st.session_state.uploaded_file_path = None
+
+init_session_state()
+
+TOOL_ICONS = {
+    "web_search": "🌐", "calculator": "🧮", "read_file": "📄",
+    "python_executor": "🐍", "weather": "🌤️", "wikipedia": "📖",
+    "read_url": "🔗", "datetime": "🕐",
+}
+
+
+# ============================================
+# Sidebar
+# ============================================
+with st.sidebar:
+    st.markdown("""
+    <div class="sb-logo">
+        <div class="icon">⚡</div>
+        <div class="title">AI Agent</div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # Model
+    st.markdown('<div class="sb-section">🤖 Model</div>', unsafe_allow_html=True)
+    model_name = os.getenv("DEFAULT_MODEL", "x-ai/grok-4.1-fast")
+    st.markdown(f"""
+    <div class="model-card">
+        <span class="dot"></span><span class="mname">{model_name.split('/')[-1]}</span>
+        <div class="mprov">via OpenRouter</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Tools
+    st.markdown('<div class="sb-section">🔧 Tools</div>', unsafe_allow_html=True)
+    for tool in st.session_state.agent.get_available_tools():
+        icon = TOOL_ICONS.get(tool["name"], "🔧")
+        short_desc = tool["description"][:70]
+        st.markdown(f"""
+        <div class="sb-card">
+            <div class="name">{icon} {tool['name']}</div>
+            <div class="desc">{short_desc}...</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # File Upload
+    st.markdown('<div class="sb-section">📁 Upload File</div>', unsafe_allow_html=True)
+    uploaded_file = st.file_uploader("Upload", type=["txt", "pdf"], label_visibility="collapsed")
+    if uploaded_file:
+        upload_dir = "uploads"
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, uploaded_file.name)
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        st.session_state.uploaded_file_path = file_path
+        st.success(f"✅ {uploaded_file.name}")
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # History
+    st.markdown('<div class="sb-section">📜 History</div>', unsafe_allow_html=True)
+    sessions = st.session_state.agent.memory.list_sessions()
+    if sessions:
+        for sess in sessions[:6]:
+            preview = sess["first_message"][:35] + "..." if len(sess["first_message"]) > 35 else sess["first_message"]
+            if st.button(f"💬 {preview}", key=f"s_{sess['session_id']}", use_container_width=True):
+                st.session_state.session_id = sess["session_id"]
+                history = st.session_state.agent.memory.get_history(sess["session_id"])
+                st.session_state.messages = [{"role": m["role"], "content": m["content"]} for m in history]
+                st.rerun()
+    else:
+        st.caption("No conversations yet")
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # Actions
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("🔄 New Chat", use_container_width=True):
+            from agent.memory import ConversationMemory
+            st.session_state.session_id = ConversationMemory.new_session_id()
+            st.session_state.messages = []
+            st.session_state.uploaded_file_path = None
+            st.rerun()
+    with c2:
+        if st.button("🗑️ Clear All", use_container_width=True):
+            st.session_state.agent.memory.clear_all()
+            st.session_state.messages = []
+            from agent.memory import ConversationMemory
+            st.session_state.session_id = ConversationMemory.new_session_id()
+            st.rerun()
+
+    # Settings
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    st.markdown('<div class="sb-section">⚙️ Settings</div>', unsafe_allow_html=True)
+    max_iter = st.slider("Max Reasoning Steps", 1, 20, st.session_state.agent.max_iterations,
+                         help="Maximum Thought→Action→Observation cycles")
+    st.session_state.agent.max_iterations = max_iter
+
+
+# ============================================
+# Header
+# ============================================
+st.markdown("""
+<div class="hero">
+    <h1>⚡ AI Agent</h1>
+    <div class="subtitle">Autonomous reasoning & tool execution — Powered by Grok</div>
+    <div class="badge-row">
+        <span class="hbadge">🌐 Web Search</span>
+        <span class="hbadge">🧮 Calculator</span>
+        <span class="hbadge">🌤️ Weather</span>
+        <span class="hbadge">📖 Wikipedia</span>
+        <span class="hbadge">🐍 Python</span>
+        <span class="hbadge">🔗 URL Reader</span>
+        <span class="hbadge">🕐 DateTime</span>
+        <span class="hbadge">📄 File Reader</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+
+# ============================================
+# Reasoning Trace Display
+# ============================================
+def display_reasoning_trace(steps: list):
+    with st.expander("🔍 View Reasoning Trace", expanded=False):
+        for step in steps:
+            if step["type"] == "tool_use":
+                if step.get("thought"):
+                    st.markdown(f"""<div class="trace-step thought">
+                        <div class="trace-label thought">💭 Thought</div>
+                        {step['thought']}
+                    </div>""", unsafe_allow_html=True)
+
+                icon = TOOL_ICONS.get(step['action'], '🔧')
+                st.markdown(f"""<div class="trace-step action">
+                    <div class="trace-label action">⚡ Action</div>
+                    <span class="tool-chip">{icon} {step['action']}</span>
+                    <br><code>{step['action_input']}</code>
+                </div>""", unsafe_allow_html=True)
+
+                if step.get("observation"):
+                    obs = step["observation"][:500]
+                    if len(step["observation"]) > 500:
+                        obs += "..."
+                    st.markdown(f"""<div class="trace-step observation">
+                        <div class="trace-label observation">👁️ Observation</div>
+                        <pre style="white-space:pre-wrap;font-size:0.78rem;color:#94a3b8;
+                            background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;
+                            margin-top:0.3rem;">{obs}</pre>
+                    </div>""", unsafe_allow_html=True)
+
+                st.markdown(f'<div class="step-num">Step {step["iteration"]}</div>', unsafe_allow_html=True)
+
+            elif step["type"] in ("final_answer", "max_iterations"):
+                if step.get("thought"):
+                    st.markdown(f"""<div class="trace-step thought">
+                        <div class="trace-label thought">💭 Final Thought</div>
+                        {step['thought']}
+                    </div>""", unsafe_allow_html=True)
+
+
+# ============================================
+# Chat Messages
+# ============================================
+for message in st.session_state.messages:
+    if message["role"] == "user":
+        with st.chat_message("user", avatar="👤"):
+            st.markdown(message["content"])
+    elif message["role"] == "assistant":
+        with st.chat_message("assistant", avatar="⚡"):
+            st.markdown(message["content"])
+            if "steps" in message:
+                display_reasoning_trace(message["steps"])
+
+# Welcome state (no messages yet)
+if not st.session_state.messages:
+    st.markdown("""
+    <div class="welcome-grid">
+        <div class="welcome-card">
+            <div class="wicon">🌤️</div>
+            <div class="wtitle">Check Weather</div>
+            <div class="wdesc">What's the weather in Tokyo?</div>
+        </div>
+        <div class="welcome-card">
+            <div class="wicon">🧮</div>
+            <div class="wtitle">Calculate</div>
+            <div class="wdesc">What is sqrt(2025)?</div>
+        </div>
+        <div class="welcome-card">
+            <div class="wicon">🌐</div>
+            <div class="wtitle">Search the Web</div>
+            <div class="wdesc">Latest news about SpaceX</div>
+        </div>
+        <div class="welcome-card">
+            <div class="wicon">📖</div>
+            <div class="wtitle">Wikipedia</div>
+            <div class="wdesc">Tell me about quantum computing</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ============================================
+# Chat Input
+# ============================================
+if prompt := st.chat_input("Ask me anything — I can search, calculate, check weather, read pages, and more..."):
+    if st.session_state.uploaded_file_path:
+        prompt += f"\n\n[Uploaded file available at: {st.session_state.uploaded_file_path}]"
+
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user", avatar="👤"):
+        st.markdown(prompt)
+
+    with st.chat_message("assistant", avatar="⚡"):
+        with st.spinner("⚡ Reasoning..."):
+            try:
+                result = st.session_state.agent.run(
+                    user_input=prompt,
+                    session_id=st.session_state.session_id,
+                )
+                st.markdown(result["final_answer"])
+                if result["steps"]:
+                    display_reasoning_trace(result["steps"])
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": result["final_answer"],
+                    "steps": result["steps"],
+                })
+            except ValueError as e:
+                st.error(str(e))
+                st.info("💡 Get a free API key at https://openrouter.ai/keys")
+            except Exception as e:
+                st.error(f"❌ {str(e)}")
+
+st.markdown('<div class="footer">Built with ❤️ — AI Agent • Powered by Grok via OpenRouter</div>', unsafe_allow_html=True)
