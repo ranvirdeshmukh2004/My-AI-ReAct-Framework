@@ -6,7 +6,7 @@ __pycache__/
 *.pyc
 
 # Data
-data/
+data/*.db
 uploads/
 
 # IDE

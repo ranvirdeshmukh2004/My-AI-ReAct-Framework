@@ -13,7 +13,7 @@ import json
 import httpx
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
+# Load environment variables from .env file (local dev)
 load_dotenv()
 
 # ============================================
@@ -21,8 +21,23 @@ load_dotenv()
 # ============================================
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "x-ai/grok-4.1-fast")
+
+
+def _get_secret(key: str, default: str = "") -> str:
+    """Get a secret from st.secrets (cloud) or os.environ (local)."""
+    # Try Streamlit secrets first (for Streamlit Cloud deployment)
+    try:
+        import streamlit as st
+        if key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        pass
+    # Fallback to environment variable
+    return os.getenv(key, default)
+
+
+OPENROUTER_API_KEY = _get_secret("OPENROUTER_API_KEY", "")
+DEFAULT_MODEL = _get_secret("DEFAULT_MODEL", "x-ai/grok-4.1-fast")
 
 
 def get_headers() -> dict:
