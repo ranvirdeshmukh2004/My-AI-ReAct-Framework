@@ -28,9 +28,6 @@ try:
 except ImportError:
     pass  # Not needed locally (system sqlite3 is new enough)
 
-# Track init errors for UI display
-_chroma_error = None
-
 
 # ============================================
 # Text Chunking
@@ -57,7 +54,6 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 100) -> list[dic
 
         # Try to break at a sentence boundary
         if end < len(text):
-            # Look for the last period, newline, or question mark
             for sep in ["\n\n", ".\n", ". ", "\n", "? ", "! "]:
                 last_sep = text[start:end].rfind(sep)
                 if last_sep > chunk_size * 0.3:
@@ -98,33 +94,26 @@ class DocumentStore:
         self._collection = None
         self._documents = {}  # Track indexed files: {filename: chunk_count}
         self._available = False
+        self._error = None
         self._init_chroma()
 
     def _init_chroma(self):
         """Try to initialize ChromaDB."""
         try:
             import chromadb
-            from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
-            
+
             self._client = chromadb.Client()  # In-memory (ephemeral)
-            
-            # Use default embedding function explicitly
-            ef = DefaultEmbeddingFunction()
-            
             self._collection = self._client.get_or_create_collection(
                 name="documents",
                 metadata={"hnsw:space": "cosine"},
-                embedding_function=ef,
             )
             self._available = True
             print("✅ ChromaDB initialized successfully")
         except ImportError as e:
-            global _chroma_error
-            _chroma_error = str(e)
+            self._error = str(e)
             print(f"⚠️ ChromaDB import error: {e}. RAG features disabled.")
         except Exception as e:
-            global _chroma_error
-            _chroma_error = str(e)
+            self._error = str(e)
             print(f"⚠️ ChromaDB init failed: {e}. RAG features disabled.")
 
     @property
@@ -135,7 +124,7 @@ class DocumentStore:
     @property
     def init_error(self) -> str:
         """Get ChromaDB initialization error if any."""
-        return _chroma_error or ""
+        return self._error or ""
 
     @property
     def indexed_documents(self) -> dict:
