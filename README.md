@@ -23,12 +23,21 @@ The agent uses the **ReAct (Reason + Act)** framework:
 
 ### Architecture
 
-```
-User Input → Redis Cache Check → Grok LLM → Tool Execution → Observe
-                                    ↑                            ↓
-                                    └──── Loop until done ───────┘
-                                              ↓
-                                    Final Answer → Save to Supabase
+```mermaid
+graph TD
+    A["👤 User Input"] --> B["⚡ Check Redis Cache"]
+    B -->|Hit| Z["✅ Return Cached Answer"]
+    B -->|Miss| C["🧠 Think — Grok LLM"]
+    C --> D{"Need a Tool?"}
+    D -->|Yes| E["🔧 Execute Tool"]
+    E --> F["👁️ Observe Result"]
+    F --> G["💾 Cache Tool Result in Redis"]
+    G --> C
+    D -->|"Need Document?"| P["📚 Pinecone RAG Search"]
+    P --> F
+    D -->|No| H["✅ Final Answer"]
+    H --> I["💾 Save to Supabase PostgreSQL"]
+    H --> J["⚡ Cache Answer in Redis"]
 ```
 
 ---
