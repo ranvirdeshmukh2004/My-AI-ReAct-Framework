@@ -2,16 +2,12 @@
 react_agent.py — Core AI Agent Loop
 =========================================
 The brain of the AI agent. Implements the ReAct
-(Reason + Act) framework:
+(Reason + Act) framework with:
+- Redis caching for LLM and tool responses
+- Supabase/SQLite memory for conversations
+- ChromaDB RAG for document search
 
     Thought → Action → Observation → ... → Final Answer
-
-The agent:
-1. Receives a user query
-2. Sends it to the LLM with tool descriptions
-3. Parses the LLM's output (Thought/Action/Final Answer)
-4. If Action → executes the tool, feeds result back as Observation
-5. Repeats until Final Answer or max iterations reached
 """
 
 import os
@@ -22,7 +18,9 @@ from agent.parser import (
     AgentAction,
     AgentFinish,
 )
-from agent.memory import ConversationMemory
+from agent.memory import get_memory, ConversationMemory
+from agent.cache import RedisCache
+from agent.rag import DocumentStore
 from tools.base import ToolRegistry
 
 # Import all tools
@@ -34,6 +32,7 @@ from tools.weather_tool import weather_tool
 from tools.wikipedia_tool import wikipedia_tool
 from tools.url_reader_tool import url_reader_tool
 from tools.datetime_tool import datetime_tool
+from tools.rag_search_tool import rag_search_tool, set_document_store
 
 
 # ============================================
@@ -55,30 +54,21 @@ def load_prompt_template() -> str:
 
 class ReactAgent:
     """
-    An autonomous AI agent using the ReAct framework.
-    
-    The agent reasons step-by-step, chooses tools dynamically,
-    executes them, observes outputs, and continues until it
-    can provide a final answer.
-    
-    Usage:
-        agent = ReactAgent()
-        result = agent.run("What is 2^10 + the population of Tokyo?")
-        print(result["final_answer"])
-        print(result["steps"])  # Full reasoning trace
+    An autonomous AI agent using the ReAct framework
+    with caching, cloud memory, and RAG capabilities.
     """
 
     def __init__(self, max_iterations: int = None):
-        """
-        Initialize the ReAct agent.
-        
-        Args:
-            max_iterations: Maximum reasoning steps before forcing
-                           a final answer (default from env or 10).
-        """
         self.max_iterations = max_iterations or int(os.getenv("MAX_ITERATIONS", "10"))
-        self.memory = ConversationMemory()
         self.prompt_template = load_prompt_template()
+
+        # Initialize infrastructure
+        self.memory, self.memory_backend = get_memory()
+        self.cache = RedisCache()
+        self.doc_store = DocumentStore()
+
+        # Connect RAG tool to document store
+        set_document_store(self.doc_store)
 
         # Initialize and register all tools
         self.tool_registry = ToolRegistry()
@@ -94,6 +84,7 @@ class ReactAgent:
         self.tool_registry.register(wikipedia_tool)
         self.tool_registry.register(url_reader_tool)
         self.tool_registry.register(datetime_tool)
+        self.tool_registry.register(rag_search_tool)
 
     def _build_system_prompt(self) -> str:
         """Build the system prompt with tool descriptions injected."""
@@ -114,46 +105,60 @@ class ReactAgent:
             lines.append(f"{role}: {msg['content']}")
         return "\n".join(lines)
 
+    def get_infrastructure_status(self) -> dict:
+        """Get status of all infrastructure components."""
+        return {
+            "memory": {
+                "backend": self.memory_backend,
+                "connected": True,
+            },
+            "cache": {
+                "backend": "Redis" if self.cache.is_redis else "In-Memory",
+                "connected": self.cache.is_redis,
+                "stats": self.cache.stats,
+            },
+            "rag": {
+                "backend": "ChromaDB",
+                "connected": self.doc_store.is_available,
+                "documents": self.doc_store.indexed_documents,
+            },
+        }
+
     def run(self, user_input: str, session_id: str = None) -> dict:
         """
         Run the ReAct agent on a user query.
         
-        This is the main entry point. The agent will:
-        1. Think about the query
-        2. Decide if a tool is needed
-        3. Execute tools and observe results
-        4. Continue until a final answer is reached
-        
-        Args:
-            user_input: The user's question or task.
-            session_id: Optional session ID for conversation memory.
-                       If None, creates a new session.
-        
-        Returns:
-            dict with:
-                - "final_answer": The agent's final response
-                - "steps": List of reasoning steps (for display)
-                - "session_id": The session ID used
+        Returns dict with: final_answer, steps, session_id, cached
         """
-        # Session management
         if session_id is None:
             session_id = self.memory.new_session_id()
 
         # Save user message to memory
         self.memory.add_message(session_id, "user", user_input)
 
+        # --- Check LLM cache first ---
+        cached_answer = self.cache.get("llm", user_input)
+        if cached_answer:
+            self.memory.add_message(session_id, "assistant", cached_answer)
+            return {
+                "final_answer": cached_answer,
+                "steps": [{
+                    "type": "final_answer",
+                    "thought": "Retrieved from cache",
+                    "final_answer": cached_answer,
+                    "iteration": 0,
+                    "cached": True,
+                }],
+                "session_id": session_id,
+                "cached": True,
+            }
+
         # Build the full prompt
         system_prompt = self._build_system_prompt()
         history_text = self._format_history(session_id)
-
-        # Prepare the system prompt (with history, but NOT the user input)
         full_system_prompt = system_prompt.replace("{history}", history_text).replace("{input}", user_input)
 
-        # Track reasoning steps for display
         steps = []
-
-        # The conversation context for the LLM
-        # System prompt + user message as separate messages
         messages = [
             {"role": "system", "content": full_system_prompt},
             {"role": "user", "content": f"Remember: Start with 'Thought:' and use tools when appropriate. For math, ALWAYS use the calculator tool.\n\nUser query: {user_input}"},
@@ -162,54 +167,56 @@ class ReactAgent:
         # ============================================
         # ReAct Loop
         # ============================================
-
         for iteration in range(self.max_iterations):
-            # --- Step 1: Get LLM response ---
             llm_response = chat_completion(messages)
-
-            # --- Step 2: Parse the response ---
             parsed = parse_llm_output(llm_response)
 
             if isinstance(parsed, AgentFinish):
-                # Agent is ready with a final answer
                 step = {
                     "type": "final_answer",
                     "thought": parsed.thought,
                     "final_answer": parsed.final_answer,
                     "iteration": iteration + 1,
+                    "cached": False,
                 }
                 steps.append(step)
 
-                # Save to memory
-                self.memory.add_message(
-                    session_id, "assistant", parsed.final_answer
-                )
+                # Cache the final answer
+                self.cache.set("llm", user_input, parsed.final_answer)
+                self.memory.add_message(session_id, "assistant", parsed.final_answer)
 
                 return {
                     "final_answer": parsed.final_answer,
                     "steps": steps,
                     "session_id": session_id,
+                    "cached": False,
                 }
 
             elif isinstance(parsed, AgentAction):
-                # Agent wants to use a tool
                 step = {
                     "type": "tool_use",
                     "thought": parsed.thought,
                     "action": parsed.action,
                     "action_input": parsed.action_input,
                     "iteration": iteration + 1,
+                    "cached": False,
                 }
 
-                # --- Step 3: Execute the tool ---
-                observation = self.tool_registry.execute(
-                    parsed.action, parsed.action_input
-                )
+                # --- Check tool cache ---
+                tool_cached = self.cache.get(parsed.action, parsed.action_input)
+                if tool_cached:
+                    observation = tool_cached
+                    step["cached"] = True
+                else:
+                    observation = self.tool_registry.execute(
+                        parsed.action, parsed.action_input
+                    )
+                    # Cache tool result
+                    self.cache.set(parsed.action, parsed.action_input, observation)
+
                 step["observation"] = observation
                 steps.append(step)
 
-                # --- Step 4: Feed observation back to the LLM ---
-                # Add the assistant's response and the observation
                 messages.append({"role": "assistant", "content": llm_response})
                 messages.append({
                     "role": "user",
@@ -217,22 +224,17 @@ class ReactAgent:
                 })
 
         # ============================================
-        # Max iterations reached — force a final answer
+        # Max iterations reached
         # ============================================
-
         fallback_answer = (
             "I've reached my maximum reasoning steps. "
             "Based on what I've gathered so far, here's my best answer:\n\n"
         )
 
-        # Try to get a summary from the LLM
         messages.append({
             "role": "user",
-            "content": (
-                "You've reached the maximum number of steps. "
-                "Please provide your Final Answer now based on "
-                "everything you've learned so far."
-            ),
+            "content": "You've reached the maximum number of steps. "
+                       "Please provide your Final Answer now.",
         })
 
         try:
@@ -250,6 +252,7 @@ class ReactAgent:
             "thought": "Reached maximum iterations",
             "final_answer": fallback_answer,
             "iteration": self.max_iterations,
+            "cached": False,
         })
 
         self.memory.add_message(session_id, "assistant", fallback_answer)
@@ -258,6 +261,7 @@ class ReactAgent:
             "final_answer": fallback_answer,
             "steps": steps,
             "session_id": session_id,
+            "cached": False,
         }
 
     def get_available_tools(self) -> list[dict]:

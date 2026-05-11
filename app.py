@@ -1,7 +1,8 @@
 """
 app.py — AI Agent Frontend (Streamlit)
 ========================================
-A premium, dark-themed chat interface for the AI Agent.
+Premium dark-themed chat interface with infrastructure monitoring,
+cache stats, and RAG knowledge base display.
 """
 
 import os
@@ -26,224 +27,131 @@ st.set_page_config(
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-
-/* === Global === */
 .stApp { font-family: 'Inter', sans-serif; }
 
-/* === Hero Header === */
-.hero {
-    text-align: center;
-    padding: 2.5rem 1rem 1.5rem;
-    position: relative;
-}
+/* Hero */
+.hero { text-align: center; padding: 2.5rem 1rem 1.5rem; position: relative; }
 .hero::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 50%;
-    transform: translateX(-50%);
+    content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
     width: 300px; height: 300px;
     background: radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 70%);
-    border-radius: 50%;
-    pointer-events: none;
+    border-radius: 50%; pointer-events: none;
 }
 .hero h1 {
-    font-size: 2.6rem;
-    font-weight: 800;
+    font-size: 2.6rem; font-weight: 800; margin: 0; letter-spacing: -0.02em;
     background: linear-gradient(135deg, #818cf8 0%, #c084fc 50%, #f472b6 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    margin: 0;
-    letter-spacing: -0.02em;
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
 }
-.hero .subtitle {
-    color: #64748b;
-    font-size: 0.95rem;
-    font-weight: 400;
-    margin-top: 0.4rem;
-}
-.hero .badge-row {
-    display: flex;
-    justify-content: center;
-    gap: 0.5rem;
-    margin-top: 1rem;
-    flex-wrap: wrap;
-}
+.hero .subtitle { color: #64748b; font-size: 0.95rem; margin-top: 0.4rem; }
+.hero .badge-row { display: flex; justify-content: center; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; }
 .hero .hbadge {
-    background: rgba(99,102,241,0.1);
-    border: 1px solid rgba(99,102,241,0.2);
-    color: #a5b4fc;
-    padding: 0.3rem 0.8rem;
-    border-radius: 999px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.03em;
+    background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.2);
+    color: #a5b4fc; padding: 0.3rem 0.8rem; border-radius: 999px;
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.03em;
 }
 
-/* === Sidebar === */
-.sb-logo {
-    text-align: center;
-    padding: 1.2rem 0 0.5rem;
-}
+/* Sidebar */
+.sb-logo { text-align: center; padding: 1.2rem 0 0.5rem; }
 .sb-logo .icon { font-size: 2.2rem; }
 .sb-logo .title {
-    font-size: 1.15rem;
-    font-weight: 700;
+    font-size: 1.15rem; font-weight: 700;
     background: linear-gradient(135deg, #818cf8, #c084fc);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    margin-top: 0.15rem;
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-top: 0.15rem;
 }
 .sb-section {
-    font-size: 0.7rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #818cf8;
-    margin: 1rem 0 0.4rem;
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.1em; color: #818cf8; margin: 1rem 0 0.4rem;
+    display: flex; align-items: center; gap: 0.35rem;
 }
 .sb-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 10px;
-    padding: 0.55rem 0.75rem;
-    margin-bottom: 0.35rem;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px; padding: 0.55rem 0.75rem; margin-bottom: 0.35rem;
     transition: all 0.2s ease;
 }
-.sb-card:hover {
-    background: rgba(255,255,255,0.06);
-    border-color: rgba(129,140,248,0.3);
-}
-.sb-card .name {
-    font-weight: 600;
-    font-size: 0.82rem;
-    color: #e2e8f0;
-}
-.sb-card .desc {
-    font-size: 0.68rem;
-    color: #64748b;
-    margin-top: 0.15rem;
-    line-height: 1.4;
-}
+.sb-card:hover { background: rgba(255,255,255,0.06); border-color: rgba(129,140,248,0.3); }
+.sb-card .name { font-weight: 600; font-size: 0.82rem; color: #e2e8f0; }
+.sb-card .desc { font-size: 0.68rem; color: #64748b; margin-top: 0.15rem; line-height: 1.4; }
 .model-card {
     background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(192,132,252,0.08));
-    border: 1px solid rgba(99,102,241,0.2);
-    border-radius: 12px;
-    padding: 0.75rem 1rem;
+    border: 1px solid rgba(99,102,241,0.2); border-radius: 12px; padding: 0.75rem 1rem;
 }
 .model-card .dot {
-    display: inline-block;
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    background: #34d399;
-    margin-right: 6px;
-    animation: blink 2s ease-in-out infinite;
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    margin-right: 6px; animation: blink 2s ease-in-out infinite;
 }
-@keyframes blink {
-    0%,100% { opacity: 1; } 50% { opacity: 0.4; }
-}
-.model-card .mname {
-    font-weight: 700;
-    font-size: 0.85rem;
-    color: #e2e8f0;
-}
-.model-card .mprov {
-    font-size: 0.7rem;
-    color: #64748b;
-}
-.divider {
-    border: none;
-    border-top: 1px solid rgba(255,255,255,0.05);
-    margin: 0.75rem 0;
-}
+.dot-green { background: #34d399; }
+.dot-red { background: #f87171; }
+.dot-yellow { background: #fbbf24; }
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.model-card .mname { font-weight: 700; font-size: 0.85rem; color: #e2e8f0; }
+.model-card .mprov { font-size: 0.7rem; color: #64748b; }
+.divider { border: none; border-top: 1px solid rgba(255,255,255,0.05); margin: 0.75rem 0; }
 
-/* === Reasoning Trace === */
+/* Infrastructure */
+.infra-row {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.35rem 0; font-size: 0.78rem;
+}
+.infra-row .label { color: #94a3b8; flex: 1; }
+.infra-row .value { color: #e2e8f0; font-weight: 600; font-size: 0.72rem; }
+.infra-badge {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.65rem; font-weight: 600;
+}
+.infra-badge.green { background: rgba(52,211,153,0.12); color: #34d399; border: 1px solid rgba(52,211,153,0.2); }
+.infra-badge.red { background: rgba(248,113,113,0.12); color: #f87171; border: 1px solid rgba(248,113,113,0.2); }
+.infra-badge.yellow { background: rgba(251,191,36,0.12); color: #fbbf24; border: 1px solid rgba(251,191,36,0.2); }
+
+/* Cache stats */
+.cache-stats {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin-top: 0.3rem;
+}
+.cache-stat {
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px; padding: 0.4rem 0.6rem; text-align: center;
+}
+.cache-stat .num { font-size: 1.1rem; font-weight: 700; color: #818cf8; }
+.cache-stat .lbl { font-size: 0.6rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* Reasoning Trace */
 .trace-step {
-    background: rgba(255,255,255,0.02);
-    border-left: 3px solid transparent;
-    padding: 0.65rem 0.9rem;
-    margin: 0.3rem 0;
-    border-radius: 0 8px 8px 0;
-    font-size: 0.82rem;
-    line-height: 1.55;
+    background: rgba(255,255,255,0.02); border-left: 3px solid transparent;
+    padding: 0.65rem 0.9rem; margin: 0.3rem 0; border-radius: 0 8px 8px 0;
+    font-size: 0.82rem; line-height: 1.55;
 }
 .trace-step.thought { border-left-color: #c084fc; }
 .trace-step.action { border-left-color: #38bdf8; }
 .trace-step.observation { border-left-color: #34d399; }
-.trace-label {
-    font-weight: 700;
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-bottom: 0.2rem;
-}
+.trace-label { font-weight: 700; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.2rem; }
 .trace-label.thought { color: #c084fc; }
 .trace-label.action { color: #38bdf8; }
 .trace-label.observation { color: #34d399; }
 .tool-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    background: rgba(56,189,248,0.12);
-    border: 1px solid rgba(56,189,248,0.25);
-    color: #38bdf8;
-    padding: 0.2rem 0.6rem;
-    border-radius: 999px;
-    font-size: 0.7rem;
-    font-weight: 600;
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    background: rgba(56,189,248,0.12); border: 1px solid rgba(56,189,248,0.25);
+    color: #38bdf8; padding: 0.2rem 0.6rem; border-radius: 999px;
+    font-size: 0.7rem; font-weight: 600;
 }
-.step-num {
-    color: #475569;
-    font-size: 0.65rem;
-    font-weight: 500;
-    text-align: right;
-    margin-top: 0.15rem;
+.cached-chip {
+    display: inline-flex; align-items: center; gap: 0.2rem;
+    background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.25);
+    color: #34d399; padding: 0.15rem 0.5rem; border-radius: 999px;
+    font-size: 0.62rem; font-weight: 700; margin-left: 0.4rem;
 }
+.step-num { color: #475569; font-size: 0.65rem; font-weight: 500; text-align: right; margin-top: 0.15rem; }
 
-/* === Welcome State === */
-.welcome-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.6rem;
-    max-width: 600px;
-    margin: 1.5rem auto;
-}
+/* Welcome */
+.welcome-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; max-width: 600px; margin: 1.5rem auto; }
 .welcome-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 12px;
-    padding: 1rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    text-align: left;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px; padding: 1rem; cursor: pointer; transition: all 0.2s ease; text-align: left;
 }
-.welcome-card:hover {
-    background: rgba(99,102,241,0.08);
-    border-color: rgba(129,140,248,0.3);
-    transform: translateY(-1px);
-}
+.welcome-card:hover { background: rgba(99,102,241,0.08); border-color: rgba(129,140,248,0.3); transform: translateY(-1px); }
 .welcome-card .wicon { font-size: 1.3rem; margin-bottom: 0.35rem; }
-.welcome-card .wtitle {
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: #e2e8f0;
-}
-.welcome-card .wdesc {
-    font-size: 0.7rem;
-    color: #64748b;
-    margin-top: 0.15rem;
-}
+.welcome-card .wtitle { font-size: 0.82rem; font-weight: 600; color: #e2e8f0; }
+.welcome-card .wdesc { font-size: 0.7rem; color: #64748b; margin-top: 0.15rem; }
 
-/* === Footer === */
-.footer {
-    text-align: center;
-    padding: 1.5rem 0 0.75rem;
-    color: #334155;
-    font-size: 0.7rem;
-    letter-spacing: 0.02em;
-}
+.footer { text-align: center; padding: 1.5rem 0 0.75rem; color: #334155; font-size: 0.7rem; letter-spacing: 0.02em; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -268,7 +176,7 @@ init_session_state()
 TOOL_ICONS = {
     "web_search": "🌐", "calculator": "🧮", "read_file": "📄",
     "python_executor": "🐍", "weather": "🌤️", "wikipedia": "📖",
-    "read_url": "🔗", "datetime": "🕐",
+    "read_url": "🔗", "datetime": "🕐", "doc_search": "📚",
 }
 
 
@@ -284,21 +192,59 @@ with st.sidebar:
     """, unsafe_allow_html=True)
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-    # Model
+    # --- Infrastructure Status ---
+    st.markdown('<div class="sb-section">🗄️ Infrastructure</div>', unsafe_allow_html=True)
+    infra = st.session_state.agent.get_infrastructure_status()
+
+    # Memory
+    mem_color = "green" if "Supabase" in infra["memory"]["backend"] else "yellow"
+    mem_label = infra["memory"]["backend"]
+    st.markdown(f'<div class="infra-row"><span class="label">💾 Memory</span><span class="infra-badge {mem_color}"><span class="dot dot-{mem_color}"></span>{mem_label}</span></div>', unsafe_allow_html=True)
+
+    # Cache
+    cache_color = "green" if infra["cache"]["connected"] else "yellow"
+    cache_label = infra["cache"]["backend"]
+    st.markdown(f'<div class="infra-row"><span class="label">⚡ Cache</span><span class="infra-badge {cache_color}"><span class="dot dot-{cache_color}"></span>{cache_label}</span></div>', unsafe_allow_html=True)
+
+    # RAG
+    rag_color = "green" if infra["rag"]["connected"] else "red"
+    rag_label = "ChromaDB" if infra["rag"]["connected"] else "Unavailable"
+    st.markdown(f'<div class="infra-row"><span class="label">📚 RAG</span><span class="infra-badge {rag_color}"><span class="dot dot-{rag_color}"></span>{rag_label}</span></div>', unsafe_allow_html=True)
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # --- Cache Stats ---
+    cache_stats = infra["cache"]["stats"]
+    if cache_stats["total"] > 0:
+        st.markdown('<div class="sb-section">📊 Cache Stats</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="cache-stats">
+            <div class="cache-stat"><div class="num">{cache_stats['hits']}</div><div class="lbl">Hits</div></div>
+            <div class="cache-stat"><div class="num">{cache_stats['misses']}</div><div class="lbl">Misses</div></div>
+            <div class="cache-stat"><div class="num">{cache_stats['hit_rate']}%</div><div class="lbl">Hit Rate</div></div>
+            <div class="cache-stat"><div class="num">{st.session_state.agent.cache.size()}</div><div class="lbl">Cached</div></div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("🗑️ Clear Cache", use_container_width=True):
+            st.session_state.agent.cache.clear()
+            st.rerun()
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # --- Model ---
     st.markdown('<div class="sb-section">🤖 Model</div>', unsafe_allow_html=True)
     model_name = os.getenv("DEFAULT_MODEL", "x-ai/grok-4.1-fast")
     st.markdown(f"""
     <div class="model-card">
-        <span class="dot"></span><span class="mname">{model_name.split('/')[-1]}</span>
+        <span class="dot dot-green"></span><span class="mname">{model_name.split('/')[-1]}</span>
         <div class="mprov">via OpenRouter</div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Tools
+    # --- Tools ---
     st.markdown('<div class="sb-section">🔧 Tools</div>', unsafe_allow_html=True)
     for tool in st.session_state.agent.get_available_tools():
         icon = TOOL_ICONS.get(tool["name"], "🔧")
-        short_desc = tool["description"][:70]
+        short_desc = tool["description"][:65]
         st.markdown(f"""
         <div class="sb-card">
             <div class="name">{icon} {tool['name']}</div>
@@ -308,7 +254,7 @@ with st.sidebar:
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-    # File Upload
+    # --- File Upload + Knowledge Base ---
     st.markdown('<div class="sb-section">📁 Upload File</div>', unsafe_allow_html=True)
     uploaded_file = st.file_uploader("Upload", type=["txt", "pdf"], label_visibility="collapsed")
     if uploaded_file:
@@ -318,11 +264,31 @@ with st.sidebar:
         with open(file_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
         st.session_state.uploaded_file_path = file_path
-        st.success(f"✅ {uploaded_file.name}")
+
+        # Index into ChromaDB for RAG
+        if st.session_state.agent.doc_store.is_available:
+            from tools.file_tool import read_file
+            text = read_file(file_path)
+            chunks = st.session_state.agent.doc_store.add_document(uploaded_file.name, text)
+            st.success(f"✅ {uploaded_file.name} — indexed {chunks} chunks")
+        else:
+            st.success(f"✅ {uploaded_file.name}")
+
+    # Show indexed documents
+    indexed = st.session_state.agent.doc_store.indexed_documents
+    if indexed:
+        st.markdown('<div class="sb-section">📚 Knowledge Base</div>', unsafe_allow_html=True)
+        for doc_name, chunk_count in indexed.items():
+            st.markdown(f"""
+            <div class="sb-card">
+                <div class="name">📄 {doc_name}</div>
+                <div class="desc">{chunk_count} chunks indexed</div>
+            </div>
+            """, unsafe_allow_html=True)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-    # History
+    # --- History ---
     st.markdown('<div class="sb-section">📜 History</div>', unsafe_allow_html=True)
     sessions = st.session_state.agent.memory.list_sessions()
     if sessions:
@@ -379,6 +345,7 @@ st.markdown("""
         <span class="hbadge">🔗 URL Reader</span>
         <span class="hbadge">🕐 DateTime</span>
         <span class="hbadge">📄 File Reader</span>
+        <span class="hbadge">📚 Doc Search</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -398,9 +365,10 @@ def display_reasoning_trace(steps: list):
                     </div>""", unsafe_allow_html=True)
 
                 icon = TOOL_ICONS.get(step['action'], '🔧')
+                cached_chip = '<span class="cached-chip">⚡ CACHED</span>' if step.get("cached") else ""
                 st.markdown(f"""<div class="trace-step action">
                     <div class="trace-label action">⚡ Action</div>
-                    <span class="tool-chip">{icon} {step['action']}</span>
+                    <span class="tool-chip">{icon} {step['action']}</span>{cached_chip}
                     <br><code>{step['action_input']}</code>
                 </div>""", unsafe_allow_html=True)
 
@@ -418,9 +386,12 @@ def display_reasoning_trace(steps: list):
                 st.markdown(f'<div class="step-num">Step {step["iteration"]}</div>', unsafe_allow_html=True)
 
             elif step["type"] in ("final_answer", "max_iterations"):
+                cached_note = ""
+                if step.get("cached"):
+                    cached_note = ' <span class="cached-chip">⚡ CACHED</span>'
                 if step.get("thought"):
                     st.markdown(f"""<div class="trace-step thought">
-                        <div class="trace-label thought">💭 Final Thought</div>
+                        <div class="trace-label thought">💭 Final Thought{cached_note}</div>
                         {step['thought']}
                     </div>""", unsafe_allow_html=True)
 
@@ -438,7 +409,7 @@ for message in st.session_state.messages:
             if "steps" in message:
                 display_reasoning_trace(message["steps"])
 
-# Welcome state (no messages yet)
+# Welcome state
 if not st.session_state.messages:
     st.markdown("""
     <div class="welcome-grid">
@@ -484,6 +455,9 @@ if prompt := st.chat_input("Ask me anything — I can search, calculate, check w
                     user_input=prompt,
                     session_id=st.session_state.session_id,
                 )
+                # Show cached indicator
+                if result.get("cached"):
+                    st.markdown('<span class="cached-chip" style="margin-bottom:0.5rem;display:inline-flex;">⚡ Served from cache</span>', unsafe_allow_html=True)
                 st.markdown(result["final_answer"])
                 if result["steps"]:
                     display_reasoning_trace(result["steps"])
@@ -498,4 +472,4 @@ if prompt := st.chat_input("Ask me anything — I can search, calculate, check w
             except Exception as e:
                 st.error(f"❌ {str(e)}")
 
-st.markdown('<div class="footer">Built with ❤️ — AI Agent • Powered by Grok via OpenRouter</div>', unsafe_allow_html=True)
+st.markdown('<div class="footer">Built with ❤️ — AI Agent • Powered by Grok via OpenRouter • PostgreSQL + ChromaDB + Redis</div>', unsafe_allow_html=True)

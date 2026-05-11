@@ -22,3 +22,14 @@ PyPDF2>=3.0.0
 
 # Data models
 pydantic>=2.0.0
+
+# === Database Stack ===
+
+# Supabase PostgreSQL (cloud-persistent memory)
+supabase>=2.0.0
+
+# Redis (response & tool caching)
+redis>=5.0.0
+
+# ChromaDB (RAG vector search)
+chromadb>=0.4.0

@@ -1,15 +1,15 @@
 """
-memory.py — Conversation Memory (SQLite)
-==========================================
-Stores conversation history in a local SQLite database.
-Each conversation session gets a unique ID so you can
-revisit past chats.
+memory.py — Conversation Memory (Supabase + SQLite Fallback)
+===============================================================
+Stores conversation history. Uses Supabase PostgreSQL if configured,
+falls back to local SQLite if not.
 
 Features:
 - Add messages (user, assistant, system, tool)
 - Retrieve conversation history by session
 - List all past sessions
-- Clear a session
+- Clear sessions
+- Graceful fallback: Supabase → SQLite
 """
 
 import os
@@ -20,41 +20,18 @@ from typing import Optional
 
 
 # ============================================
-# Default database path
+# SQLite Memory (Local Fallback)
 # ============================================
 
-DEFAULT_DB_PATH = os.getenv("DATABASE_PATH", "data/memory.db")
+class SQLiteMemory:
+    """SQLite-backed conversation memory (local fallback)."""
 
-
-class ConversationMemory:
-    """
-    SQLite-backed conversation memory.
-    
-    Usage:
-        memory = ConversationMemory()
-        memory.add_message("session_1", "user", "Hello!")
-        memory.add_message("session_1", "assistant", "Hi there!")
-        history = memory.get_history("session_1")
-    """
-
-    def __init__(self, db_path: str = DEFAULT_DB_PATH):
-        """
-        Initialize the memory store.
-        
-        Args:
-            db_path: Path to the SQLite database file.
-                     Will be created if it doesn't exist.
-        """
-        self.db_path = db_path
-
-        # Ensure the data directory exists
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-
-        # Create the database and table
+    def __init__(self, db_path: str = None):
+        self.db_path = db_path or os.getenv("DATABASE_PATH", "data/memory.db")
+        os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
         self._init_db()
 
     def _init_db(self):
-        """Create the messages table if it doesn't exist."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS messages (
@@ -65,7 +42,6 @@ class ConversationMemory:
                     timestamp TEXT NOT NULL
                 )
             """)
-            # Index for fast session lookups
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_session 
                 ON messages(session_id)
@@ -73,14 +49,6 @@ class ConversationMemory:
             conn.commit()
 
     def add_message(self, session_id: str, role: str, content: str):
-        """
-        Store a message in the database.
-        
-        Args:
-            session_id: Unique identifier for the conversation session.
-            role: One of "user", "assistant", "system", or "tool".
-            content: The message content.
-        """
         timestamp = datetime.now().isoformat()
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
@@ -89,19 +57,7 @@ class ConversationMemory:
             )
             conn.commit()
 
-    def get_history(
-        self, session_id: str, limit: int = 50
-    ) -> list[dict]:
-        """
-        Retrieve conversation history for a session.
-        
-        Args:
-            session_id: The session to retrieve.
-            limit: Maximum number of messages to return.
-        
-        Returns:
-            List of message dicts with 'role', 'content', and 'timestamp'.
-        """
+    def get_history(self, session_id: str, limit: int = 50) -> list[dict]:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
                 "SELECT role, content, timestamp FROM messages "
@@ -114,29 +70,10 @@ class ConversationMemory:
             ]
 
     def get_messages_for_llm(self, session_id: str, limit: int = 20) -> list[dict]:
-        """
-        Get conversation history formatted for the LLM API.
-        
-        Returns only 'role' and 'content' keys, suitable for
-        passing directly to the chat completion API.
-        
-        Args:
-            session_id: The session to retrieve.
-            limit: Maximum number of messages.
-        
-        Returns:
-            List of dicts with 'role' and 'content' keys.
-        """
         history = self.get_history(session_id, limit)
         return [{"role": msg["role"], "content": msg["content"]} for msg in history]
 
     def list_sessions(self) -> list[dict]:
-        """
-        List all conversation sessions with their first message and timestamp.
-        
-        Returns:
-            List of session info dicts.
-        """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("""
                 SELECT session_id, 
@@ -161,26 +98,140 @@ class ConversationMemory:
             ]
 
     def clear_session(self, session_id: str):
-        """
-        Delete all messages in a session.
-        
-        Args:
-            session_id: The session to clear.
-        """
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                "DELETE FROM messages WHERE session_id = ?",
-                (session_id,),
-            )
+            conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
             conn.commit()
 
     def clear_all(self):
-        """Delete all messages across all sessions."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("DELETE FROM messages")
             conn.commit()
 
+
+# ============================================
+# Supabase Memory (Cloud Persistent)
+# ============================================
+
+class SupabaseMemory:
+    """Supabase PostgreSQL-backed conversation memory."""
+
+    def __init__(self):
+        from supabase import create_client
+        url = _get_secret("SUPABASE_URL")
+        key = _get_secret("SUPABASE_KEY")
+        self.client = create_client(url, key)
+
+    def add_message(self, session_id: str, role: str, content: str):
+        self.client.table("messages").insert({
+            "session_id": session_id,
+            "role": role,
+            "content": content,
+        }).execute()
+
+    def get_history(self, session_id: str, limit: int = 50) -> list[dict]:
+        response = (
+            self.client.table("messages")
+            .select("role, content, timestamp")
+            .eq("session_id", session_id)
+            .order("id", desc=False)
+            .limit(limit)
+            .execute()
+        )
+        return [
+            {"role": r["role"], "content": r["content"], "timestamp": str(r["timestamp"])}
+            for r in response.data
+        ]
+
+    def get_messages_for_llm(self, session_id: str, limit: int = 20) -> list[dict]:
+        history = self.get_history(session_id, limit)
+        return [{"role": msg["role"], "content": msg["content"]} for msg in history]
+
+    def list_sessions(self) -> list[dict]:
+        # Get unique sessions with first message
+        response = (
+            self.client.table("messages")
+            .select("session_id, content, timestamp, role")
+            .order("timestamp", desc=False)
+            .execute()
+        )
+        # Group by session
+        sessions = {}
+        for row in response.data:
+            sid = row["session_id"]
+            if sid not in sessions:
+                sessions[sid] = {
+                    "session_id": sid,
+                    "started": str(row["timestamp"]),
+                    "message_count": 0,
+                    "first_message": "Empty session",
+                }
+            sessions[sid]["message_count"] += 1
+            if row["role"] == "user" and sessions[sid]["first_message"] == "Empty session":
+                sessions[sid]["first_message"] = row["content"]
+
+        # Sort by most recent first
+        result = sorted(sessions.values(), key=lambda x: x["started"], reverse=True)
+        return result
+
+    def clear_session(self, session_id: str):
+        self.client.table("messages").delete().eq("session_id", session_id).execute()
+
+    def clear_all(self):
+        self.client.table("messages").delete().neq("id", 0).execute()
+
+
+# ============================================
+# Helper: Get secrets
+# ============================================
+
+def _get_secret(key: str, default: str = "") -> str:
+    """Get a secret from st.secrets or environment."""
+    try:
+        import streamlit as st
+        if key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        pass
+    return os.getenv(key, default)
+
+
+# ============================================
+# Factory Function
+# ============================================
+
+def get_memory():
+    """
+    Return the best available memory backend.
+    Tries Supabase first, falls back to SQLite.
+    
+    Returns:
+        (memory_instance, backend_name) tuple
+    """
+    supabase_url = _get_secret("SUPABASE_URL")
+    supabase_key = _get_secret("SUPABASE_KEY")
+
+    if supabase_url and supabase_key:
+        try:
+            memory = SupabaseMemory()
+            return memory, "Supabase PostgreSQL"
+        except Exception as e:
+            print(f"⚠️ Supabase connection failed ({e}), falling back to SQLite")
+
+    return SQLiteMemory(), "SQLite (local)"
+
+
+# ============================================
+# Backward Compatibility
+# ============================================
+
+class ConversationMemory(SQLiteMemory):
+    """Alias for backward compatibility."""
+    
     @staticmethod
     def new_session_id() -> str:
-        """Generate a new unique session ID."""
         return str(uuid.uuid4())[:8]
+
+
+# Add new_session_id to both classes
+SQLiteMemory.new_session_id = staticmethod(lambda: str(uuid.uuid4())[:8])
+SupabaseMemory.new_session_id = staticmethod(lambda: str(uuid.uuid4())[:8])
