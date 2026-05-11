@@ -210,6 +210,8 @@ with st.sidebar:
     rag_color = "green" if infra["rag"]["connected"] else "red"
     rag_label = "ChromaDB" if infra["rag"]["connected"] else "Unavailable"
     st.markdown(f'<div class="infra-row"><span class="label">📚 RAG</span><span class="infra-badge {rag_color}"><span class="dot dot-{rag_color}"></span>{rag_label}</span></div>', unsafe_allow_html=True)
+    if not infra["rag"]["connected"] and st.session_state.agent.doc_store.init_error:
+        st.caption(f"⚠️ {st.session_state.agent.doc_store.init_error}")
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 

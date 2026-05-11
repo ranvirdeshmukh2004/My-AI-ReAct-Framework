@@ -15,8 +15,21 @@ Flow:
 """
 
 import os
+import sys
 import hashlib
 from typing import Optional
+
+# Fix for Streamlit Cloud: ChromaDB requires sqlite3 >= 3.35.0
+# but Streamlit Cloud's Ubuntu has an older version.
+# pysqlite3-binary provides a newer sqlite3.
+try:
+    import pysqlite3
+    sys.modules["sqlite3"] = pysqlite3
+except ImportError:
+    pass  # Not needed locally (system sqlite3 is new enough)
+
+# Track init errors for UI display
+_chroma_error = None
 
 
 # ============================================
@@ -106,14 +119,23 @@ class DocumentStore:
             self._available = True
             print("✅ ChromaDB initialized successfully")
         except ImportError as e:
+            global _chroma_error
+            _chroma_error = str(e)
             print(f"⚠️ ChromaDB import error: {e}. RAG features disabled.")
         except Exception as e:
+            global _chroma_error
+            _chroma_error = str(e)
             print(f"⚠️ ChromaDB init failed: {e}. RAG features disabled.")
 
     @property
     def is_available(self) -> bool:
         """Whether ChromaDB is available."""
         return self._available
+
+    @property
+    def init_error(self) -> str:
+        """Get ChromaDB initialization error if any."""
+        return _chroma_error or ""
 
     @property
     def indexed_documents(self) -> dict:
