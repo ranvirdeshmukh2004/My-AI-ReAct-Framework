@@ -91,16 +91,24 @@ class DocumentStore:
         """Try to initialize ChromaDB."""
         try:
             import chromadb
+            from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+            
             self._client = chromadb.Client()  # In-memory (ephemeral)
+            
+            # Use default embedding function explicitly
+            ef = DefaultEmbeddingFunction()
+            
             self._collection = self._client.get_or_create_collection(
                 name="documents",
                 metadata={"hnsw:space": "cosine"},
+                embedding_function=ef,
             )
             self._available = True
-        except ImportError:
-            print("⚠️ ChromaDB not installed. RAG features disabled.")
+            print("✅ ChromaDB initialized successfully")
+        except ImportError as e:
+            print(f"⚠️ ChromaDB import error: {e}. RAG features disabled.")
         except Exception as e:
-            print(f"⚠️ ChromaDB init failed ({e}). RAG features disabled.")
+            print(f"⚠️ ChromaDB init failed: {e}. RAG features disabled.")
 
     @property
     def is_available(self) -> bool:
