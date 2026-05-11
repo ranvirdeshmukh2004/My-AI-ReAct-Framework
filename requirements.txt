@@ -31,9 +31,5 @@ supabase>=2.0.0
 # Redis (response & tool caching)
 redis>=5.0.0
 
-# ChromaDB (RAG vector search)
-chromadb>=0.4.0
-onnxruntime>=1.15.0
-tokenizers>=0.13.0
-pysqlite3-binary>=0.5.0
-protobuf>=4.25.0
+# Pinecone (RAG vector search — cloud-hosted)
+pinecone>=5.0.0

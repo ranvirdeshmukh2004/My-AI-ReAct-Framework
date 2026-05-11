@@ -5,7 +5,7 @@ The brain of the AI agent. Implements the ReAct
 (Reason + Act) framework with:
 - Redis caching for LLM and tool responses
 - Supabase/SQLite memory for conversations
-- ChromaDB RAG for document search
+- Pinecone RAG for document search
 
     Thought → Action → Observation → ... → Final Answer
 """
@@ -118,7 +118,7 @@ class ReactAgent:
                 "stats": self.cache.stats,
             },
             "rag": {
-                "backend": "ChromaDB",
+                "backend": "Pinecone",
                 "connected": self.doc_store.is_available,
                 "documents": self.doc_store.indexed_documents,
             },

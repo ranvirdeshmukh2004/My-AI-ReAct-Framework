@@ -208,7 +208,7 @@ with st.sidebar:
 
     # RAG
     rag_color = "green" if infra["rag"]["connected"] else "red"
-    rag_label = "ChromaDB" if infra["rag"]["connected"] else "Unavailable"
+    rag_label = "Pinecone" if infra["rag"]["connected"] else "Unavailable"
     st.markdown(f'<div class="infra-row"><span class="label">📚 RAG</span><span class="infra-badge {rag_color}"><span class="dot dot-{rag_color}"></span>{rag_label}</span></div>', unsafe_allow_html=True)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
@@ -265,7 +265,7 @@ with st.sidebar:
             f.write(uploaded_file.getbuffer())
         st.session_state.uploaded_file_path = file_path
 
-        # Index into ChromaDB for RAG
+        # Index into Pinecone for RAG
         if st.session_state.agent.doc_store.is_available:
             from tools.file_tool import read_file
             text = read_file(file_path)
@@ -472,4 +472,4 @@ if prompt := st.chat_input("Ask me anything — I can search, calculate, check w
             except Exception as e:
                 st.error(f"❌ {str(e)}")
 
-st.markdown('<div class="footer">Built with ❤️ — AI Agent • Powered by Grok via OpenRouter • PostgreSQL + ChromaDB + Redis</div>', unsafe_allow_html=True)
+st.markdown('<div class="footer">Built with ❤️ — AI Agent • Powered by Grok via OpenRouter • PostgreSQL + Pinecone + Redis</div>', unsafe_allow_html=True)
