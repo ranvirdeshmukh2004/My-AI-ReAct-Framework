@@ -34,10 +34,7 @@ def doc_search(query: str) -> str:
     query = query.strip().strip("'\"")
 
     if _document_store is None or not _document_store.is_available:
-        return "No documents indexed. Please upload a file first."
-
-    if not _document_store.indexed_documents:
-        return "No documents have been uploaded yet. Upload a PDF or TXT file first."
+        return "Document search is not available. Vector database is not connected."
 
     results = _document_store.search(query, top_k=3)
 

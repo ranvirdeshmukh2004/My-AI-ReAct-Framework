@@ -182,6 +182,11 @@ def init_session_state():
         st.session_state.session_id = ConversationMemory.new_session_id()
     if "uploaded_file_path" not in st.session_state:
         st.session_state.uploaded_file_path = None
+    if "indexed_docs" not in st.session_state:
+        st.session_state.indexed_docs = {}
+    # Restore indexed_docs tracker into the doc_store (survives Streamlit reruns)
+    if st.session_state.indexed_docs and hasattr(st.session_state.agent, 'doc_store'):
+        st.session_state.agent.doc_store._documents.update(st.session_state.indexed_docs)
 
 init_session_state()
 
@@ -305,12 +310,14 @@ with st.sidebar:
             from tools.file_tool import read_file
             text = read_file(file_path)
             chunks = st.session_state.agent.doc_store.add_document(uploaded_file.name, text)
+            # Persist in session state so it survives reruns
+            st.session_state.indexed_docs[uploaded_file.name] = chunks
             st.success(f"✅ {uploaded_file.name} — indexed {chunks} chunks")
         else:
             st.success(f"✅ {uploaded_file.name}")
 
-    # Show indexed documents
-    indexed = st.session_state.agent.doc_store.indexed_documents
+    # Show indexed documents (from session state — persists across reruns)
+    indexed = st.session_state.indexed_docs
     if indexed:
         st.markdown('<div class="sb-section">📚 Knowledge Base</div>', unsafe_allow_html=True)
         for doc_name, chunk_count in indexed.items():

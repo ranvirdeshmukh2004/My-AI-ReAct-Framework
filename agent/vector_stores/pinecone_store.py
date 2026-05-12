@@ -117,7 +117,7 @@ class PineconeStore(VectorStoreBase):
         return len(chunks)
 
     def search(self, query: str, top_k: int = 3) -> list[dict]:
-        if not self._available or not self._documents:
+        if not self._available:
             return []
 
         try:
