@@ -11,7 +11,7 @@ The brain of the AI agent. Implements the ReAct
 """
 
 import os
-from agent.llm import chat_completion
+from agent.llm import chat_completion, get_last_usage, reset_usage_accumulator, accumulate_usage
 from agent.parser import (
     parse_llm_output,
     format_tool_descriptions,
@@ -151,6 +151,7 @@ class ReactAgent:
                 }],
                 "session_id": session_id,
                 "cached": True,
+                "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "llm_calls": 0},
             }
 
         # Build the full prompt
@@ -159,6 +160,7 @@ class ReactAgent:
         full_system_prompt = system_prompt.replace("{history}", history_text).replace("{input}", user_input)
 
         steps = []
+        token_usage = reset_usage_accumulator()
         messages = [
             {"role": "system", "content": full_system_prompt},
             {"role": "user", "content": f"Remember: Start with 'Thought:' and use tools when appropriate. For math, ALWAYS use the calculator tool.\n\nUser query: {user_input}"},
@@ -169,6 +171,7 @@ class ReactAgent:
         # ============================================
         for iteration in range(self.max_iterations):
             llm_response = chat_completion(messages)
+            accumulate_usage(token_usage, get_last_usage())
             parsed = parse_llm_output(llm_response)
 
             if isinstance(parsed, AgentFinish):
@@ -190,6 +193,7 @@ class ReactAgent:
                     "steps": steps,
                     "session_id": session_id,
                     "cached": False,
+                    "token_usage": token_usage,
                 }
 
             elif isinstance(parsed, AgentAction):
@@ -239,6 +243,7 @@ class ReactAgent:
 
         try:
             final_response = chat_completion(messages)
+            accumulate_usage(token_usage, get_last_usage())
             final_parsed = parse_llm_output(final_response)
             if isinstance(final_parsed, AgentFinish):
                 fallback_answer = final_parsed.final_answer
@@ -262,6 +267,7 @@ class ReactAgent:
             "steps": steps,
             "session_id": session_id,
             "cached": False,
+            "token_usage": token_usage,
         }
 
     def get_available_tools(self) -> list[dict]:

@@ -17,6 +17,32 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ============================================
+# Token Usage Tracking
+# ============================================
+
+_last_usage = None  # Stores usage from most recent call
+
+def get_last_usage() -> dict:
+    """Return token usage from the most recent LLM call."""
+    return _last_usage or {}
+
+def reset_usage_accumulator() -> dict:
+    """Create a fresh usage accumulator for a multi-step agent run."""
+    return {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "llm_calls": 0,
+    }
+
+def accumulate_usage(accumulator: dict, usage: dict) -> None:
+    """Add a single LLM call's usage into the running total."""
+    accumulator["prompt_tokens"] += usage.get("prompt_tokens", 0)
+    accumulator["completion_tokens"] += usage.get("completion_tokens", 0)
+    accumulator["total_tokens"] += usage.get("total_tokens", 0)
+    accumulator["llm_calls"] += 1
+
+# ============================================
 # Configuration
 # ============================================
 
@@ -111,6 +137,10 @@ def chat_completion(
 
             # Parse the response
             data = response.json()
+
+            # Capture token usage
+            global _last_usage
+            _last_usage = data.get("usage", {})
 
             # Extract the assistant's message
             if "choices" in data and len(data["choices"]) > 0:

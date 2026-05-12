@@ -152,6 +152,16 @@ st.markdown("""
 .welcome-card .wdesc { font-size: 0.7rem; color: #64748b; margin-top: 0.15rem; }
 
 .footer { text-align: center; padding: 1.5rem 0 0.75rem; color: #334155; font-size: 0.7rem; letter-spacing: 0.02em; }
+
+/* Token Stats */
+.token-bar {
+    display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+    padding: 0.4rem 0.75rem; margin-top: 0.6rem;
+    background: rgba(99,102,241,0.06); border: 1px solid rgba(99,102,241,0.12);
+    border-radius: 8px; font-size: 0.68rem; color: #94a3b8;
+}
+.token-bar .tk { font-weight: 700; color: #818cf8; }
+.token-bar .sep { color: rgba(255,255,255,0.1); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -434,6 +444,20 @@ for message in st.session_state.messages:
             st.markdown(message["content"])
             if "steps" in message:
                 display_reasoning_trace(message["steps"])
+            usage = message.get("token_usage", {})
+            if usage.get("total_tokens", 0) > 0:
+                st.markdown(f"""
+                <div class="token-bar">
+                    <span>📊 Tokens:</span>
+                    <span>Input <span class="tk">{usage.get('prompt_tokens', 0):,}</span></span>
+                    <span class="sep">|</span>
+                    <span>Output <span class="tk">{usage.get('completion_tokens', 0):,}</span></span>
+                    <span class="sep">|</span>
+                    <span>Total <span class="tk">{usage.get('total_tokens', 0):,}</span></span>
+                    <span class="sep">|</span>
+                    <span>LLM Calls <span class="tk">{usage.get('llm_calls', 0)}</span></span>
+                </div>
+                """, unsafe_allow_html=True)
 
 # Welcome state
 if not st.session_state.messages:
@@ -487,10 +511,28 @@ if prompt := st.chat_input("Ask me anything — I can search, calculate, check w
                 st.markdown(result["final_answer"])
                 if result["steps"]:
                     display_reasoning_trace(result["steps"])
+
+                # Token usage display
+                usage = result.get("token_usage", {})
+                if usage.get("total_tokens", 0) > 0:
+                    st.markdown(f"""
+                    <div class="token-bar">
+                        <span>📊 Tokens:</span>
+                        <span>Input <span class="tk">{usage.get('prompt_tokens', 0):,}</span></span>
+                        <span class="sep">|</span>
+                        <span>Output <span class="tk">{usage.get('completion_tokens', 0):,}</span></span>
+                        <span class="sep">|</span>
+                        <span>Total <span class="tk">{usage.get('total_tokens', 0):,}</span></span>
+                        <span class="sep">|</span>
+                        <span>LLM Calls <span class="tk">{usage.get('llm_calls', 0)}</span></span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": result["final_answer"],
                     "steps": result["steps"],
+                    "token_usage": usage,
                 })
             except ValueError as e:
                 st.error(str(e))
