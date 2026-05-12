@@ -213,6 +213,29 @@ with st.sidebar:
     rag_label = infra["rag"]["backend"] if infra["rag"]["connected"] else "Unavailable"
     st.markdown(f'<div class="infra-row"><span class="label">📚 RAG</span><span class="infra-badge {rag_color}"><span class="dot dot-{rag_color}"></span>{rag_label}</span></div>', unsafe_allow_html=True)
 
+    # --- Vector Database Selection ---
+    st.markdown('<div class="sb-section">📚 Vector Database</div>', unsafe_allow_html=True)
+    provider_options = ["Pinecone", "Weaviate", "Qdrant"]
+    provider_map = {"Pinecone": "pinecone", "Weaviate": "weaviate", "Qdrant": "qdrant"}
+    current_idx = 0
+    for i, name in enumerate(provider_options):
+        if provider_map[name] == st.session_state.vector_provider:
+            current_idx = i
+            break
+    selected_provider = st.selectbox(
+        "Select Provider",
+        options=provider_options,
+        index=current_idx,
+        label_visibility="collapsed",
+        help="Choose the vector database for document search (RAG)",
+    )
+    new_provider = provider_map[selected_provider]
+    if new_provider != st.session_state.vector_provider:
+        st.session_state.vector_provider = new_provider
+        from agent.react_agent import ReactAgent
+        st.session_state.agent = ReactAgent(vector_provider=new_provider)
+        st.rerun()
+
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
     # --- Cache Stats ---
@@ -330,28 +353,6 @@ with st.sidebar:
                          help="Maximum Thought→Action→Observation cycles")
     st.session_state.agent.max_iterations = max_iter
 
-    # --- Vector Database Selection ---
-    st.markdown('<div class="sb-section">📚 Vector Database</div>', unsafe_allow_html=True)
-    provider_options = ["Pinecone", "Weaviate", "Qdrant"]
-    provider_map = {"Pinecone": "pinecone", "Weaviate": "weaviate", "Qdrant": "qdrant"}
-    current_idx = 0
-    for i, name in enumerate(provider_options):
-        if provider_map[name] == st.session_state.vector_provider:
-            current_idx = i
-            break
-    selected_provider = st.selectbox(
-        "Select Provider",
-        options=provider_options,
-        index=current_idx,
-        label_visibility="collapsed",
-        help="Choose the vector database for document search (RAG)",
-    )
-    new_provider = provider_map[selected_provider]
-    if new_provider != st.session_state.vector_provider:
-        st.session_state.vector_provider = new_provider
-        from agent.react_agent import ReactAgent
-        st.session_state.agent = ReactAgent(vector_provider=new_provider)
-        st.rerun()
 
 
 # ============================================
