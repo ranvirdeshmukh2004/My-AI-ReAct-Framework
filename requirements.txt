@@ -31,5 +31,13 @@ supabase>=2.0.0
 # Redis (response & tool caching)
 redis>=5.0.0
 
-# Pinecone (RAG vector search — cloud-hosted)
+# === Vector Databases (RAG — choose one or more) ===
+
+# Pinecone (cloud vector search with integrated embeddings)
 pinecone>=5.0.0
+
+# Weaviate (cloud vector search with built-in vectorizer)
+weaviate-client>=4.0.0
+
+# Qdrant (cloud vector search with FastEmbed)
+qdrant-client[fastembed]>=1.9.0

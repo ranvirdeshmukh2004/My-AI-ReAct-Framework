@@ -1,7 +1,7 @@
 """
 rag_search_tool.py — Document Search Tool (RAG)
 ==================================================
-Semantic search across uploaded documents using Pinecone.
+Semantic search across uploaded documents using Pinecone, Weaviate, or Qdrant.
 Returns the most relevant chunks for a query.
 
 This tool is powered by the RAG pipeline:

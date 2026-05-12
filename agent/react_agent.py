@@ -5,7 +5,7 @@ The brain of the AI agent. Implements the ReAct
 (Reason + Act) framework with:
 - Redis caching for LLM and tool responses
 - Supabase/SQLite memory for conversations
-- Pinecone RAG for document search
+- Multi-provider RAG for document search (Pinecone, Weaviate, Qdrant)
 
     Thought → Action → Observation → ... → Final Answer
 """
@@ -58,14 +58,14 @@ class ReactAgent:
     with caching, cloud memory, and RAG capabilities.
     """
 
-    def __init__(self, max_iterations: int = None):
+    def __init__(self, max_iterations: int = None, vector_provider: str = "pinecone"):
         self.max_iterations = max_iterations or int(os.getenv("MAX_ITERATIONS", "10"))
         self.prompt_template = load_prompt_template()
 
         # Initialize infrastructure
         self.memory, self.memory_backend = get_memory()
         self.cache = RedisCache()
-        self.doc_store = DocumentStore()
+        self.doc_store = DocumentStore(provider=vector_provider)
 
         # Connect RAG tool to document store
         set_document_store(self.doc_store)
@@ -118,7 +118,7 @@ class ReactAgent:
                 "stats": self.cache.stats,
             },
             "rag": {
-                "backend": "Pinecone",
+                "backend": self.doc_store.provider_name,
                 "connected": self.doc_store.is_available,
                 "documents": self.doc_store.indexed_documents,
             },

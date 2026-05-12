@@ -162,9 +162,11 @@ st.markdown("""
 def init_session_state():
     if "messages" not in st.session_state:
         st.session_state.messages = []
+    if "vector_provider" not in st.session_state:
+        st.session_state.vector_provider = "pinecone"
     if "agent" not in st.session_state:
         from agent.react_agent import ReactAgent
-        st.session_state.agent = ReactAgent()
+        st.session_state.agent = ReactAgent(vector_provider=st.session_state.vector_provider)
     if "session_id" not in st.session_state:
         from agent.memory import ConversationMemory
         st.session_state.session_id = ConversationMemory.new_session_id()
@@ -208,7 +210,7 @@ with st.sidebar:
 
     # RAG
     rag_color = "green" if infra["rag"]["connected"] else "red"
-    rag_label = "Pinecone" if infra["rag"]["connected"] else "Unavailable"
+    rag_label = infra["rag"]["backend"] if infra["rag"]["connected"] else "Unavailable"
     st.markdown(f'<div class="infra-row"><span class="label">📚 RAG</span><span class="infra-badge {rag_color}"><span class="dot dot-{rag_color}"></span>{rag_label}</span></div>', unsafe_allow_html=True)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
@@ -265,7 +267,7 @@ with st.sidebar:
             f.write(uploaded_file.getbuffer())
         st.session_state.uploaded_file_path = file_path
 
-        # Index into Pinecone for RAG
+        # Index into vector store for RAG
         if st.session_state.agent.doc_store.is_available:
             from tools.file_tool import read_file
             text = read_file(file_path)
@@ -327,6 +329,29 @@ with st.sidebar:
     max_iter = st.slider("Max Reasoning Steps", 1, 20, st.session_state.agent.max_iterations,
                          help="Maximum Thought→Action→Observation cycles")
     st.session_state.agent.max_iterations = max_iter
+
+    # --- Vector Database Selection ---
+    st.markdown('<div class="sb-section">📚 Vector Database</div>', unsafe_allow_html=True)
+    provider_options = ["Pinecone", "Weaviate", "Qdrant"]
+    provider_map = {"Pinecone": "pinecone", "Weaviate": "weaviate", "Qdrant": "qdrant"}
+    current_idx = 0
+    for i, name in enumerate(provider_options):
+        if provider_map[name] == st.session_state.vector_provider:
+            current_idx = i
+            break
+    selected_provider = st.selectbox(
+        "Select Provider",
+        options=provider_options,
+        index=current_idx,
+        label_visibility="collapsed",
+        help="Choose the vector database for document search (RAG)",
+    )
+    new_provider = provider_map[selected_provider]
+    if new_provider != st.session_state.vector_provider:
+        st.session_state.vector_provider = new_provider
+        from agent.react_agent import ReactAgent
+        st.session_state.agent = ReactAgent(vector_provider=new_provider)
+        st.rerun()
 
 
 # ============================================
@@ -472,4 +497,4 @@ if prompt := st.chat_input("Ask me anything — I can search, calculate, check w
             except Exception as e:
                 st.error(f"❌ {str(e)}")
 
-st.markdown('<div class="footer">Built with ❤️ — AI Agent • Powered by Grok via OpenRouter • PostgreSQL + Pinecone + Redis</div>', unsafe_allow_html=True)
+st.markdown('<div class="footer">Built with ❤️ — AI Agent • Powered by Grok via OpenRouter • PostgreSQL + Pinecone/Weaviate/Qdrant + Redis</div>', unsafe_allow_html=True)
