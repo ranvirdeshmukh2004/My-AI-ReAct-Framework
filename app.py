@@ -161,7 +161,8 @@ st.markdown("""
     border-radius: 8px; font-size: 0.68rem; color: #94a3b8;
 }
 .token-bar .tk { font-weight: 700; color: #818cf8; }
-.token-bar .sep { color: rgba(255,255,255,0.1); }
+.token-bar .sep { color: rgba(255,255,255,0.15); }
+.token-bar .prov { background: rgba(99,102,241,0.15); padding: 0.15rem 0.45rem; border-radius: 4px; color: #a5b4fc; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -184,9 +185,14 @@ def init_session_state():
         st.session_state.uploaded_file_path = None
     if "indexed_docs" not in st.session_state:
         st.session_state.indexed_docs = {}
+    if "cache_enabled" not in st.session_state:
+        st.session_state.cache_enabled = True
     # Restore indexed_docs tracker into the doc_store (survives Streamlit reruns)
     if st.session_state.indexed_docs and hasattr(st.session_state.agent, 'doc_store'):
-        st.session_state.agent.doc_store._documents.update(st.session_state.indexed_docs)
+        try:
+            st.session_state.agent.doc_store._store._documents.update(st.session_state.indexed_docs)
+        except AttributeError:
+            pass
 
 init_session_state()
 
@@ -335,12 +341,22 @@ with st.sidebar:
     sessions = st.session_state.agent.memory.list_sessions()
     if sessions:
         for sess in sessions[:6]:
-            preview = sess["first_message"][:35] + "..." if len(sess["first_message"]) > 35 else sess["first_message"]
-            if st.button(f"💬 {preview}", key=f"s_{sess['session_id']}", use_container_width=True):
-                st.session_state.session_id = sess["session_id"]
-                history = st.session_state.agent.memory.get_history(sess["session_id"])
-                st.session_state.messages = [{"role": m["role"], "content": m["content"]} for m in history]
-                st.rerun()
+            preview = sess["first_message"][:30] + "..." if len(sess["first_message"]) > 30 else sess["first_message"]
+            col_load, col_del = st.columns([4, 1])
+            with col_load:
+                if st.button(f"💬 {preview}", key=f"s_{sess['session_id']}", use_container_width=True):
+                    st.session_state.session_id = sess["session_id"]
+                    history = st.session_state.agent.memory.get_history(sess["session_id"])
+                    st.session_state.messages = [{"role": m["role"], "content": m["content"]} for m in history]
+                    st.rerun()
+            with col_del:
+                if st.button("🗑️", key=f"del_{sess['session_id']}", help="Delete this chat"):
+                    st.session_state.agent.memory.clear_session(sess["session_id"])
+                    if st.session_state.session_id == sess["session_id"]:
+                        from agent.memory import ConversationMemory
+                        st.session_state.session_id = ConversationMemory.new_session_id()
+                        st.session_state.messages = []
+                    st.rerun()
     else:
         st.caption("No conversations yet")
 
@@ -369,6 +385,9 @@ with st.sidebar:
     max_iter = st.slider("Max Reasoning Steps", 1, 20, st.session_state.agent.max_iterations,
                          help="Maximum Thought→Action→Observation cycles")
     st.session_state.agent.max_iterations = max_iter
+
+    st.session_state.cache_enabled = st.toggle("⚡ Enable Cache", value=st.session_state.cache_enabled,
+                                                help="Disable to force fresh LLM + vector DB calls (for benchmarking)")
 
 
 
@@ -452,17 +471,29 @@ for message in st.session_state.messages:
             if "steps" in message:
                 display_reasoning_trace(message["steps"])
             usage = message.get("token_usage", {})
-            if usage.get("total_tokens", 0) > 0:
+            timing = message.get("timing", {})
+            provider = message.get("vector_provider", "—")
+            total_ms = timing.get("total_ms", 0)
+            llm_ms = timing.get("llm_ms", 0)
+            vs_ms = timing.get("vector_search_ms", 0)
+            if usage.get("total_tokens", 0) > 0 or total_ms > 0:
                 st.markdown(f"""
                 <div class="token-bar">
-                    <span>📊 Tokens:</span>
-                    <span>Input <span class="tk">{usage.get('prompt_tokens', 0):,}</span></span>
+                    <span class="prov">🗄️ {provider}</span>
                     <span class="sep">|</span>
-                    <span>Output <span class="tk">{usage.get('completion_tokens', 0):,}</span></span>
+                    <span>⏱️ Total <span class="tk">{total_ms:,.0f}ms</span></span>
                     <span class="sep">|</span>
-                    <span>Total <span class="tk">{usage.get('total_tokens', 0):,}</span></span>
+                    <span>🤖 LLM <span class="tk">{llm_ms:,.0f}ms</span></span>
                     <span class="sep">|</span>
-                    <span>LLM Calls <span class="tk">{usage.get('llm_calls', 0)}</span></span>
+                    <span>🔍 VectorDB <span class="tk">{vs_ms:,.0f}ms</span></span>
+                    <span class="sep">|</span>
+                    <span>📥 In <span class="tk">{usage.get('prompt_tokens', 0):,}</span></span>
+                    <span class="sep">|</span>
+                    <span>📤 Out <span class="tk">{usage.get('completion_tokens', 0):,}</span></span>
+                    <span class="sep">|</span>
+                    <span>Σ <span class="tk">{usage.get('total_tokens', 0):,}</span></span>
+                    <span class="sep">|</span>
+                    <span>Calls <span class="tk">{usage.get('llm_calls', 0)}</span></span>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -511,6 +542,7 @@ if prompt := st.chat_input("Ask me anything — I can search, calculate, check w
                 result = st.session_state.agent.run(
                     user_input=prompt,
                     session_id=st.session_state.session_id,
+                    skip_cache=not st.session_state.cache_enabled,
                 )
                 # Show cached indicator
                 if result.get("cached"):
@@ -519,27 +551,41 @@ if prompt := st.chat_input("Ask me anything — I can search, calculate, check w
                 if result["steps"]:
                     display_reasoning_trace(result["steps"])
 
-                # Token usage display
+                # Comprehensive metrics display
                 usage = result.get("token_usage", {})
-                if usage.get("total_tokens", 0) > 0:
-                    st.markdown(f"""
-                    <div class="token-bar">
-                        <span>📊 Tokens:</span>
-                        <span>Input <span class="tk">{usage.get('prompt_tokens', 0):,}</span></span>
-                        <span class="sep">|</span>
-                        <span>Output <span class="tk">{usage.get('completion_tokens', 0):,}</span></span>
-                        <span class="sep">|</span>
-                        <span>Total <span class="tk">{usage.get('total_tokens', 0):,}</span></span>
-                        <span class="sep">|</span>
-                        <span>LLM Calls <span class="tk">{usage.get('llm_calls', 0)}</span></span>
-                    </div>
-                    """, unsafe_allow_html=True)
+                timing = result.get("timing", {})
+                provider = result.get("vector_provider", "—")
+                total_ms = timing.get("total_ms", 0)
+                llm_ms = timing.get("llm_ms", 0)
+                vs_ms = timing.get("vector_search_ms", 0)
+
+                st.markdown(f"""
+                <div class="token-bar">
+                    <span class="prov">🗄️ {provider}</span>
+                    <span class="sep">|</span>
+                    <span>⏱️ Total <span class="tk">{total_ms:,.0f}ms</span></span>
+                    <span class="sep">|</span>
+                    <span>🤖 LLM <span class="tk">{llm_ms:,.0f}ms</span></span>
+                    <span class="sep">|</span>
+                    <span>🔍 VectorDB <span class="tk">{vs_ms:,.0f}ms</span></span>
+                    <span class="sep">|</span>
+                    <span>📥 In <span class="tk">{usage.get('prompt_tokens', 0):,}</span></span>
+                    <span class="sep">|</span>
+                    <span>📤 Out <span class="tk">{usage.get('completion_tokens', 0):,}</span></span>
+                    <span class="sep">|</span>
+                    <span>Σ <span class="tk">{usage.get('total_tokens', 0):,}</span></span>
+                    <span class="sep">|</span>
+                    <span>Calls <span class="tk">{usage.get('llm_calls', 0)}</span></span>
+                </div>
+                """, unsafe_allow_html=True)
 
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": result["final_answer"],
                     "steps": result["steps"],
                     "token_usage": usage,
+                    "timing": timing,
+                    "vector_provider": provider,
                 })
             except ValueError as e:
                 st.error(str(e))

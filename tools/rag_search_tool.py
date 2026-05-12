@@ -13,12 +13,18 @@ from tools.base import Tool
 
 # Global reference to the document store (set by the agent)
 _document_store = None
+_last_search_time_ms = 0  # Timing for last vector DB search
 
 
 def set_document_store(store):
     """Set the shared DocumentStore instance."""
     global _document_store
     _document_store = store
+
+
+def get_last_search_time_ms() -> float:
+    """Return the time (ms) the last vector DB search took."""
+    return _last_search_time_ms
 
 
 def doc_search(query: str) -> str:
@@ -31,12 +37,16 @@ def doc_search(query: str) -> str:
     Returns:
         Top matching document chunks with sources.
     """
+    global _last_search_time_ms
     query = query.strip().strip("'\"")
 
     if _document_store is None or not _document_store.is_available:
         return "Document search is not available. Vector database is not connected."
 
+    import time
+    t0 = time.time()
     results = _document_store.search(query, top_k=3)
+    _last_search_time_ms = round((time.time() - t0) * 1000, 1)
 
     if not results:
         return f"No relevant content found for: '{query}'"

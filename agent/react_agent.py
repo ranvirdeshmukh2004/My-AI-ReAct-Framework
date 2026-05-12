@@ -11,6 +11,7 @@ The brain of the AI agent. Implements the ReAct
 """
 
 import os
+import time
 from agent.llm import chat_completion, get_last_usage, reset_usage_accumulator, accumulate_usage
 from agent.parser import (
     parse_llm_output,
@@ -124,12 +125,14 @@ class ReactAgent:
             },
         }
 
-    def run(self, user_input: str, session_id: str = None) -> dict:
+    def run(self, user_input: str, session_id: str = None, skip_cache: bool = False) -> dict:
         """
         Run the ReAct agent on a user query.
         
-        Returns dict with: final_answer, steps, session_id, cached
+        Returns dict with: final_answer, steps, session_id, cached, token_usage, timing
         """
+        run_start = time.time()
+
         if session_id is None:
             session_id = self.memory.new_session_id()
 
@@ -137,7 +140,7 @@ class ReactAgent:
         self.memory.add_message(session_id, "user", user_input)
 
         # --- Check LLM cache first ---
-        cached_answer = self.cache.get("llm", user_input)
+        cached_answer = None if skip_cache else self.cache.get("llm", user_input)
         if cached_answer:
             self.memory.add_message(session_id, "assistant", cached_answer)
             return {
@@ -152,6 +155,8 @@ class ReactAgent:
                 "session_id": session_id,
                 "cached": True,
                 "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "llm_calls": 0},
+                "timing": {"total_ms": round((time.time() - run_start) * 1000, 1), "llm_ms": 0, "vector_search_ms": 0},
+                "vector_provider": self.doc_store.provider_name,
             }
 
         # Build the full prompt
@@ -161,6 +166,8 @@ class ReactAgent:
 
         steps = []
         token_usage = reset_usage_accumulator()
+        llm_time_ms = 0
+        vector_search_ms = 0
         messages = [
             {"role": "system", "content": full_system_prompt},
             {"role": "user", "content": f"Remember: Start with 'Thought:' and use tools when appropriate. For math, ALWAYS use the calculator tool.\n\nUser query: {user_input}"},
@@ -170,7 +177,9 @@ class ReactAgent:
         # ReAct Loop
         # ============================================
         for iteration in range(self.max_iterations):
+            t_llm = time.time()
             llm_response = chat_completion(messages)
+            llm_time_ms += (time.time() - t_llm) * 1000
             accumulate_usage(token_usage, get_last_usage())
             parsed = parse_llm_output(llm_response)
 
@@ -194,6 +203,12 @@ class ReactAgent:
                     "session_id": session_id,
                     "cached": False,
                     "token_usage": token_usage,
+                    "timing": {
+                        "total_ms": round((time.time() - run_start) * 1000, 1),
+                        "llm_ms": round(llm_time_ms, 1),
+                        "vector_search_ms": round(vector_search_ms, 1),
+                    },
+                    "vector_provider": self.doc_store.provider_name,
                 }
 
             elif isinstance(parsed, AgentAction):
@@ -208,13 +223,17 @@ class ReactAgent:
 
                 # --- Check tool cache ---
                 tool_cached = self.cache.get(parsed.action, parsed.action_input)
-                if tool_cached:
+                if tool_cached and not skip_cache:
                     observation = tool_cached
                     step["cached"] = True
                 else:
                     observation = self.tool_registry.execute(
                         parsed.action, parsed.action_input
                     )
+                    # Capture vector search time if doc_search was used
+                    if parsed.action == "doc_search":
+                        from tools.rag_search_tool import get_last_search_time_ms
+                        vector_search_ms += get_last_search_time_ms()
                     # Cache tool result
                     self.cache.set(parsed.action, parsed.action_input, observation)
 
@@ -242,7 +261,9 @@ class ReactAgent:
         })
 
         try:
+            t_llm = time.time()
             final_response = chat_completion(messages)
+            llm_time_ms += (time.time() - t_llm) * 1000
             accumulate_usage(token_usage, get_last_usage())
             final_parsed = parse_llm_output(final_response)
             if isinstance(final_parsed, AgentFinish):
@@ -268,6 +289,12 @@ class ReactAgent:
             "session_id": session_id,
             "cached": False,
             "token_usage": token_usage,
+            "timing": {
+                "total_ms": round((time.time() - run_start) * 1000, 1),
+                "llm_ms": round(llm_time_ms, 1),
+                "vector_search_ms": round(vector_search_ms, 1),
+            },
+            "vector_provider": self.doc_store.provider_name,
         }
 
     def get_available_tools(self) -> list[dict]:
