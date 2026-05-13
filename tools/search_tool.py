@@ -19,7 +19,7 @@ def web_search(query: str) -> str:
         query: The search query string.
     
     Returns:
-        Formatted string with top search results.
+        Formatted string with top search results and [SOURCES] block.
     """
     try:
         # Initialize DuckDuckGo search
@@ -32,17 +32,21 @@ def web_search(query: str) -> str:
 
         # Format results nicely for the LLM
         formatted = []
+        sources = []
         for i, result in enumerate(results, 1):
             title = result.get("title", "No title")
             body = result.get("body", "No description")
             href = result.get("href", "No URL")
             formatted.append(
-                f"{i}. **{title}**\n"
+                f"{i}. **{title}** [Source {i}]\n"
                 f"   {body}\n"
                 f"   URL: {href}"
             )
+            sources.append(f"[{i}] {title} | {href}")
 
-        return "\n\n".join(formatted)
+        output = "\n\n".join(formatted)
+        output += "\n\n[SOURCES]\n" + "\n".join(sources)
+        return output
 
     except Exception as e:
         return f"Search error: {str(e)}. Please try a different query."

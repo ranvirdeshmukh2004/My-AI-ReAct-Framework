@@ -65,6 +65,8 @@ def parse_llm_output(text: str) -> ParseResult:
         AgentFinish if the agent is ready to give a final answer.
     """
     # Clean up the text
+    if not text:
+        return AgentFinish(thought="", final_answer="I wasn't able to generate a response. Please try again.")
     text = text.strip()
 
     # --- Check for Final Answer first ---

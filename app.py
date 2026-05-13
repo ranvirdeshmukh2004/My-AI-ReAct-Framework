@@ -163,6 +163,46 @@ st.markdown("""
 .token-bar .tk { font-weight: 700; color: #818cf8; }
 .token-bar .sep { color: rgba(255,255,255,0.15); }
 .token-bar .prov { background: rgba(99,102,241,0.15); padding: 0.15rem 0.45rem; border-radius: 4px; color: #a5b4fc; font-weight: 600; }
+
+/* Inline Citations */
+.cite-link {
+    display: inline; font-size: 0.7em; vertical-align: super;
+    color: #818cf8; font-weight: 700; cursor: pointer;
+    text-decoration: none; position: relative;
+    background: rgba(99,102,241,0.1); padding: 0 3px;
+    border-radius: 3px; margin: 0 1px;
+    transition: all 0.15s ease;
+}
+.cite-link:hover { background: rgba(99,102,241,0.25); color: #a5b4fc; }
+.cite-link .cite-tip {
+    visibility: hidden; opacity: 0;
+    position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%);
+    background: #1e1b4b; color: #e0e7ff; padding: 6px 10px;
+    border-radius: 6px; font-size: 0.75rem; white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 999;
+    pointer-events: none; transition: opacity 0.15s ease;
+    font-weight: 400; vertical-align: baseline;
+    max-width: 350px; overflow: hidden; text-overflow: ellipsis;
+}
+.cite-link:hover .cite-tip { visibility: visible; opacity: 1; }
+
+/* References Panel */
+.ref-panel {
+    margin-top: 0.5rem; padding: 0.6rem 0.8rem;
+    background: rgba(30, 27, 75, 0.3); border: 1px solid rgba(99,102,241,0.15);
+    border-radius: 8px; font-size: 0.78rem;
+}
+.ref-panel-title {
+    font-weight: 700; color: #a5b4fc; margin-bottom: 0.3rem; font-size: 0.8rem;
+}
+.ref-item {
+    padding: 0.25rem 0; color: #94a3b8; line-height: 1.4;
+}
+.ref-item a {
+    color: #818cf8; text-decoration: none; word-break: break-all;
+}
+.ref-item a:hover { text-decoration: underline; color: #a5b4fc; }
+.ref-num { font-weight: 700; color: #818cf8; margin-right: 0.3rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -201,6 +241,80 @@ TOOL_ICONS = {
     "python_executor": "🐍", "weather": "🌤️", "wikipedia": "📖",
     "read_url": "🔗", "datetime": "🕐", "doc_search": "📚",
 }
+
+
+# ============================================
+# Citation Rendering Helpers
+# ============================================
+import re as _re_app
+import html as _html_mod
+
+def render_citations(answer: str, sources: list) -> str:
+    """
+    Replace [N] markers in the answer with styled HTML citation links.
+    Also strips out any ### References block the LLM may have appended
+    (we render our own from the sources list).
+    """
+    if not sources:
+        return answer
+
+    # Remove LLM-generated ### References section (we render our own)
+    answer = _re_app.sub(r'###\s*References.*', '', answer, flags=_re_app.DOTALL | _re_app.IGNORECASE).strip()
+
+    def _cite_replace(m):
+        num = int(m.group(1))
+        idx = num - 1
+        if 0 <= idx < len(sources):
+            src = sources[idx]
+            title = _html_mod.escape(src.get("title", f"Source {num}"))
+            url = src.get("url", "#")
+            is_doc = url.startswith("uploaded-document:")
+            if is_doc:
+                # No clickable link for uploaded documents
+                return (
+                    f'<span class="cite-link">[{num}]'
+                    f'<span class="cite-tip">📄 {title}</span>'
+                    f'</span>'
+                )
+            return (
+                f'<a class="cite-link" href="{_html_mod.escape(url)}" target="_blank" rel="noopener">[{num}]'
+                f'<span class="cite-tip">{title} — {_html_mod.escape(url)}</span>'
+                f'</a>'
+            )
+        return m.group(0)
+
+    return _re_app.sub(r'\[(\d+)\]', _cite_replace, answer)
+
+
+def render_references_panel(sources: list) -> str:
+    """Build HTML for the collapsible references panel."""
+    if not sources:
+        return ""
+    items = []
+    for i, src in enumerate(sources, 1):
+        title = _html_mod.escape(src.get("title", f"Source {i}"))
+        url = src.get("url", "")
+        is_doc = url.startswith("uploaded-document:")
+        if is_doc:
+            doc_name = _html_mod.escape(url.replace("uploaded-document:", ""))
+            items.append(
+                f'<div class="ref-item">'
+                f'<span class="ref-num">[{i}]</span> 📄 {title} — <em>{doc_name}</em>'
+                f'</div>'
+            )
+        else:
+            items.append(
+                f'<div class="ref-item">'
+                f'<span class="ref-num">[{i}]</span> {title} — '
+                f'<a href="{_html_mod.escape(url)}" target="_blank" rel="noopener">{_html_mod.escape(url)}</a>'
+                f'</div>'
+            )
+    return (
+        '<div class="ref-panel">'
+        '<div class="ref-panel-title">📎 References</div>'
+        + "".join(items)
+        + '</div>'
+    )
 
 
 # ============================================
@@ -467,9 +581,18 @@ for message in st.session_state.messages:
             st.markdown(message["content"])
     elif message["role"] == "assistant":
         with st.chat_message("assistant", avatar="⚡"):
-            st.markdown(message["content"])
+            # Render with citations if sources available
+            msg_sources = message.get("sources", [])
+            if msg_sources:
+                st.markdown(render_citations(message["content"], msg_sources), unsafe_allow_html=True)
+            else:
+                st.markdown(message["content"])
             if "steps" in message:
                 display_reasoning_trace(message["steps"])
+            # Collapsible references panel
+            if msg_sources:
+                with st.expander("📎 View References", expanded=False):
+                    st.markdown(render_references_panel(msg_sources), unsafe_allow_html=True)
             usage = message.get("token_usage", {})
             timing = message.get("timing", {})
             provider = message.get("vector_provider", "—")
@@ -547,9 +670,22 @@ if prompt := st.chat_input("Ask me anything — I can search, calculate, check w
                 # Show cached indicator
                 if result.get("cached"):
                     st.markdown('<span class="cached-chip" style="margin-bottom:0.5rem;display:inline-flex;">⚡ Served from cache</span>', unsafe_allow_html=True)
-                st.markdown(result["final_answer"])
+
+                # Render answer with inline citations
+                sources = result.get("sources", [])
+                if sources:
+                    cited_answer = render_citations(result["final_answer"], sources)
+                    st.markdown(cited_answer, unsafe_allow_html=True)
+                else:
+                    st.markdown(result["final_answer"])
+
                 if result["steps"]:
                     display_reasoning_trace(result["steps"])
+
+                # Collapsible references panel
+                if sources:
+                    with st.expander("📎 View References", expanded=False):
+                        st.markdown(render_references_panel(sources), unsafe_allow_html=True)
 
                 # Comprehensive metrics display
                 usage = result.get("token_usage", {})
@@ -586,6 +722,7 @@ if prompt := st.chat_input("Ask me anything — I can search, calculate, check w
                     "token_usage": usage,
                     "timing": timing,
                     "vector_provider": provider,
+                    "sources": sources,
                 })
             except ValueError as e:
                 st.error(str(e))

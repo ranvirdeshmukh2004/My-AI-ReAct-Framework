@@ -52,14 +52,18 @@ def doc_search(query: str) -> str:
         return f"No relevant content found for: '{query}'"
 
     formatted = [f"📚 Document search results for: '{query}'\n"]
+    sources = []
     for i, r in enumerate(results, 1):
         score_pct = int(r["score"] * 100)
         formatted.append(
-            f"**Result {i}** (relevance: {score_pct}%) — from: {r['source']}\n"
+            f"**Result {i}** [Source {i}] (relevance: {score_pct}%) — from: {r['source']}\n"
             f"{r['text']}\n"
         )
+        sources.append(f"[{i}] {r['source']} (chunk {r.get('chunk_index', '?')}, {score_pct}% relevance) | uploaded-document:{r['source']}")
 
-    return "\n---\n".join(formatted)
+    output = "\n---\n".join(formatted)
+    output += "\n\n[SOURCES]\n" + "\n".join(sources)
+    return output
 
 
 # ============================================

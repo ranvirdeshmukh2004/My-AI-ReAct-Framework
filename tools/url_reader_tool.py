@@ -46,7 +46,10 @@ def read_url(url: str) -> str:
         if response.status_code != 200:
             return f"Error: Could not fetch URL (HTTP {response.status_code})"
 
+        # Extract page title from HTML
         html = response.text
+        title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+        page_title = title_match.group(1).strip() if title_match else url
 
         # Basic HTML to text conversion
         text = _html_to_text(html)
@@ -56,7 +59,9 @@ def read_url(url: str) -> str:
         if len(text) > max_chars:
             text = text[:max_chars] + f"\n\n... [Truncated — page has {len(text)} characters]"
 
-        return f"🌐 Content from: {url}\n{'━' * 40}\n\n{text}"
+        output = f"🌐 Content from: {url} [Source 1]\n{'━' * 40}\n\n{text}"
+        output += f"\n\n[SOURCES]\n[1] {page_title} | {url}"
+        return output
 
     except httpx.TimeoutException:
         return f"Error: Request timed out for URL: {url}"

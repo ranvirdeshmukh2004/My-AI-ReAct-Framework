@@ -54,12 +54,13 @@ def wikipedia_lookup(topic: str) -> str:
         page_url = data.get("content_urls", {}).get("desktop", {}).get("page", "")
         description = data.get("description", "")
 
-        result = f"📖 **{title}**"
+        result = f"📖 **{title}** [Source 1]"
         if description:
             result += f"\n_{description}_"
         result += f"\n\n{extract}"
         if page_url:
             result += f"\n\n🔗 Source: {page_url}"
+            result += f"\n\n[SOURCES]\n[1] {title} — Wikipedia | {page_url}"
 
         return result
 

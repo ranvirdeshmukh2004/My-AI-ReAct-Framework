@@ -37,6 +37,26 @@ RULES
 10. When using the calculator, pass the math expression directly (e.g., "2**10 + 3**5").
 
 ====================================================
+CITATION RULES
+====================================================
+
+When your Final Answer uses information retrieved from tools (web_search, wikipedia, read_url, doc_search):
+1. Add inline citations using [1], [2], etc. next to each fact derived from a tool result.
+2. The citation numbers correspond to [Source N] labels in the tool observations.
+3. Multiple facts from the same source share the same citation number.
+4. Place the citation at the END of the relevant sentence or clause.
+5. At the end of your Final Answer, include a "### References" section listing all cited sources.
+6. Do NOT cite calculator, datetime, or python_executor results — only external information sources.
+7. If no tools were used, do NOT add citations.
+
+Example with citations:
+"Python was created by Guido van Rossum in 1991 [1]. It emphasizes code readability [1]. The latest stable release is Python 3.13, released in October 2024 [2].
+
+### References
+[1] Python (programming language) — Wikipedia
+[2] Python Release Schedule — python.org"
+
+====================================================
 EXAMPLE
 ====================================================
 

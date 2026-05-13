@@ -34,6 +34,50 @@ from tools.wikipedia_tool import wikipedia_tool
 from tools.url_reader_tool import url_reader_tool
 from tools.datetime_tool import datetime_tool
 from tools.rag_search_tool import rag_search_tool, set_document_store
+import re as _re
+
+
+# ============================================
+# Source Extraction Helpers
+# ============================================
+
+def extract_sources(text: str) -> list[dict]:
+    """Parse [SOURCES] block from tool output."""
+    sources = []
+    match = _re.search(r'\[SOURCES\]\n(.+)', text, _re.DOTALL)
+    if not match:
+        return sources
+    for line in match.group(1).strip().split('\n'):
+        m = _re.match(r'\[(\d+)\]\s*(.+?)\s*\|\s*(.+)', line.strip())
+        if m:
+            sources.append({"title": m.group(2).strip(), "url": m.group(3).strip()})
+    return sources
+
+
+def renumber_sources(text: str, offset: int) -> str:
+    """Renumber [Source N] and [N] references in text by offset."""
+    if offset == 0:
+        return text
+    def _replace(m):
+        old_num = int(m.group(1))
+        return m.group(0).replace(str(old_num), str(old_num + offset))
+    text = _re.sub(r'\[Source (\d+)\]', _replace, text)
+    # Also renumber in the [SOURCES] block
+    lines = text.split('\n')
+    new_lines = []
+    in_sources = False
+    for line in lines:
+        if line.strip() == '[SOURCES]':
+            in_sources = True
+            new_lines.append(line)
+            continue
+        if in_sources:
+            m = _re.match(r'\[(\d+)\](.+)', line)
+            if m:
+                new_lines.append(f'[{int(m.group(1)) + offset}]{m.group(2)}')
+                continue
+        new_lines.append(line)
+    return '\n'.join(new_lines)
 
 
 # ============================================
@@ -157,6 +201,7 @@ class ReactAgent:
                 "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "llm_calls": 0},
                 "timing": {"total_ms": round((time.time() - run_start) * 1000, 1), "llm_ms": 0, "vector_search_ms": 0},
                 "vector_provider": self.doc_store.provider_name,
+                "sources": [],
             }
 
         # Build the full prompt
@@ -168,6 +213,7 @@ class ReactAgent:
         token_usage = reset_usage_accumulator()
         llm_time_ms = 0
         vector_search_ms = 0
+        all_sources = []  # Accumulated sources across all tool calls
         messages = [
             {"role": "system", "content": full_system_prompt},
             {"role": "user", "content": f"Remember: Start with 'Thought:' and use tools when appropriate. For math, ALWAYS use the calculator tool.\n\nUser query: {user_input}"},
@@ -209,6 +255,7 @@ class ReactAgent:
                         "vector_search_ms": round(vector_search_ms, 1),
                     },
                     "vector_provider": self.doc_store.provider_name,
+                    "sources": all_sources,
                 }
 
             elif isinstance(parsed, AgentAction):
@@ -239,6 +286,14 @@ class ReactAgent:
 
                 step["observation"] = observation
                 steps.append(step)
+
+                # Extract and accumulate sources from tool output
+                new_sources = extract_sources(observation)
+                if new_sources:
+                    offset = len(all_sources)
+                    all_sources.extend(new_sources)
+                    # Renumber sources in the observation for the LLM
+                    observation = renumber_sources(observation, offset)
 
                 messages.append({"role": "assistant", "content": llm_response})
                 messages.append({
@@ -295,6 +350,7 @@ class ReactAgent:
                 "vector_search_ms": round(vector_search_ms, 1),
             },
             "vector_provider": self.doc_store.provider_name,
+            "sources": all_sources,
         }
 
     def get_available_tools(self) -> list[dict]:
