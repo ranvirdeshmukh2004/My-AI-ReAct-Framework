@@ -164,45 +164,68 @@ st.markdown("""
 .token-bar .sep { color: rgba(255,255,255,0.15); }
 .token-bar .prov { background: rgba(99,102,241,0.15); padding: 0.15rem 0.45rem; border-radius: 4px; color: #a5b4fc; font-weight: 600; }
 
-/* Inline Citations */
-.cite-link {
-    display: inline; font-size: 0.7em; vertical-align: super;
-    color: #818cf8; font-weight: 700; cursor: pointer;
-    text-decoration: none; position: relative;
-    background: rgba(99,102,241,0.1); padding: 0 3px;
-    border-radius: 3px; margin: 0 1px;
-    transition: all 0.15s ease;
+/* Inline Source Badges (Grok-style) */
+.src-badge {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 0.7rem; font-weight: 600;
+    color: #94a3b8; background: rgba(148,163,184,0.12);
+    padding: 1px 8px; border-radius: 10px; margin: 0 2px;
+    cursor: pointer; text-decoration: none;
+    border: 1px solid rgba(148,163,184,0.15);
+    transition: all 0.15s ease; position: relative;
+    vertical-align: middle; line-height: 1.6;
 }
-.cite-link:hover { background: rgba(99,102,241,0.25); color: #a5b4fc; }
-.cite-link .cite-tip {
+.src-badge:hover {
+    background: rgba(99,102,241,0.2); color: #a5b4fc;
+    border-color: rgba(99,102,241,0.3);
+}
+.src-badge .src-tip {
     visibility: hidden; opacity: 0;
     position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%);
     background: #1e1b4b; color: #e0e7ff; padding: 6px 10px;
-    border-radius: 6px; font-size: 0.75rem; white-space: nowrap;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 999;
+    border-radius: 6px; font-size: 0.72rem; white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5); z-index: 999;
     pointer-events: none; transition: opacity 0.15s ease;
-    font-weight: 400; vertical-align: baseline;
-    max-width: 350px; overflow: hidden; text-overflow: ellipsis;
+    font-weight: 400; max-width: 400px;
+    overflow: hidden; text-overflow: ellipsis;
 }
-.cite-link:hover .cite-tip { visibility: visible; opacity: 1; }
+.src-badge:hover .src-tip { visibility: visible; opacity: 1; }
+
+/* Sources Summary Pill */
+.sources-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.75rem; color: #94a3b8;
+    background: rgba(148,163,184,0.08); border: 1px solid rgba(148,163,184,0.12);
+    padding: 4px 12px; border-radius: 14px; margin-top: 0.5rem;
+    cursor: pointer; transition: all 0.15s ease;
+}
+.sources-pill:hover { background: rgba(99,102,241,0.12); color: #a5b4fc; }
 
 /* References Panel */
 .ref-panel {
-    margin-top: 0.5rem; padding: 0.6rem 0.8rem;
-    background: rgba(30, 27, 75, 0.3); border: 1px solid rgba(99,102,241,0.15);
-    border-radius: 8px; font-size: 0.78rem;
-}
-.ref-panel-title {
-    font-weight: 700; color: #a5b4fc; margin-bottom: 0.3rem; font-size: 0.8rem;
+    padding: 0.5rem 0; font-size: 0.78rem;
 }
 .ref-item {
-    padding: 0.25rem 0; color: #94a3b8; line-height: 1.4;
+    padding: 0.3rem 0; color: #94a3b8; line-height: 1.5;
+    display: flex; align-items: flex-start; gap: 0.4rem;
 }
 .ref-item a {
     color: #818cf8; text-decoration: none; word-break: break-all;
 }
 .ref-item a:hover { text-decoration: underline; color: #a5b4fc; }
-.ref-num { font-weight: 700; color: #818cf8; margin-right: 0.3rem; }
+.ref-num { font-weight: 700; color: #636e80; min-width: 1.2rem; }
+
+/* Action Icons */
+.action-bar {
+    display: flex; align-items: center; gap: 0.3rem; margin-top: 0.4rem;
+}
+.action-bar button {
+    background: none; border: none; color: #636e80;
+    cursor: pointer; padding: 4px 6px; border-radius: 6px;
+    font-size: 0.85rem; transition: all 0.15s ease;
+    display: inline-flex; align-items: center;
+}
+.action-bar button:hover { background: rgba(148,163,184,0.12); color: #a5b4fc; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -249,11 +272,27 @@ TOOL_ICONS = {
 import re as _re_app
 import html as _html_mod
 
+def _get_short_name(title: str) -> str:
+    """Extract a short display name from a source title (like Grok badges)."""
+    # Known patterns
+    if "wikipedia" in title.lower():
+        return "Wikipedia"
+    if "uploaded-document:" in title.lower() or "chunk" in title.lower():
+        parts = title.split("(")[0].strip()
+        if len(parts) > 20:
+            return parts[:18] + "…"
+        return parts
+    # Shorten generic titles to first 2-3 meaningful words
+    words = title.replace(" — ", " ").replace(" - ", " ").split()
+    if len(words) <= 3:
+        return title
+    return " ".join(words[:3])
+
+
 def render_citations(answer: str, sources: list) -> str:
     """
-    Replace [N] markers in the answer with styled HTML citation links.
-    Also strips out any ### References block the LLM may have appended
-    (we render our own from the sources list).
+    Replace [N] markers with Grok-style inline source badges.
+    Shows source name as a pill instead of [1].
     """
     if not sources:
         return answer
@@ -267,18 +306,18 @@ def render_citations(answer: str, sources: list) -> str:
         if 0 <= idx < len(sources):
             src = sources[idx]
             title = _html_mod.escape(src.get("title", f"Source {num}"))
+            short = _html_mod.escape(_get_short_name(src.get("title", f"Source {num}")))
             url = src.get("url", "#")
             is_doc = url.startswith("uploaded-document:")
             if is_doc:
-                # No clickable link for uploaded documents
                 return (
-                    f'<span class="cite-link">[{num}]'
-                    f'<span class="cite-tip">📄 {title}</span>'
+                    f'<span class="src-badge">📄 {short}'
+                    f'<span class="src-tip">{title}</span>'
                     f'</span>'
                 )
             return (
-                f'<a class="cite-link" href="{_html_mod.escape(url)}" target="_blank" rel="noopener">[{num}]'
-                f'<span class="cite-tip">{title} — {_html_mod.escape(url)}</span>'
+                f'<a class="src-badge" href="{_html_mod.escape(url)}" target="_blank" rel="noopener">{short}'
+                f'<span class="src-tip">{title} — {_html_mod.escape(url)}</span>'
                 f'</a>'
             )
         return m.group(0)
@@ -287,7 +326,7 @@ def render_citations(answer: str, sources: list) -> str:
 
 
 def render_references_panel(sources: list) -> str:
-    """Build HTML for the collapsible references panel."""
+    """Build HTML for the references panel."""
     if not sources:
         return ""
     items = []
@@ -299,22 +338,17 @@ def render_references_panel(sources: list) -> str:
             doc_name = _html_mod.escape(url.replace("uploaded-document:", ""))
             items.append(
                 f'<div class="ref-item">'
-                f'<span class="ref-num">[{i}]</span> 📄 {title} — <em>{doc_name}</em>'
+                f'<span class="ref-num">{i}.</span> 📄 {title} — <em>{doc_name}</em>'
                 f'</div>'
             )
         else:
             items.append(
                 f'<div class="ref-item">'
-                f'<span class="ref-num">[{i}]</span> {title} — '
+                f'<span class="ref-num">{i}.</span> {title} — '
                 f'<a href="{_html_mod.escape(url)}" target="_blank" rel="noopener">{_html_mod.escape(url)}</a>'
                 f'</div>'
             )
-    return (
-        '<div class="ref-panel">'
-        '<div class="ref-panel-title">📎 References</div>'
-        + "".join(items)
-        + '</div>'
-    )
+    return '<div class="ref-panel">' + "".join(items) + '</div>'
 
 
 # ============================================
@@ -589,10 +623,24 @@ for message in st.session_state.messages:
                 st.markdown(message["content"])
             if "steps" in message:
                 display_reasoning_trace(message["steps"])
-            # Collapsible references panel
+            # Sources pill + collapsible references
             if msg_sources:
-                with st.expander("📎 View References", expanded=False):
+                with st.expander(f"🔗 {len(msg_sources)} sources", expanded=False):
                     st.markdown(render_references_panel(msg_sources), unsafe_allow_html=True)
+            # Action bar: copy + regenerate
+            hist_cols = st.columns([1, 1, 12])
+            with hist_cols[0]:
+                if st.button("📋", key=f"copy_hist_{id(message)}", help="Copy response"):
+                    st.session_state["_clipboard"] = message["content"]
+                    st.toast("📋 Copied!", icon="✅")
+            with hist_cols[1]:
+                if st.button("🔄", key=f"regen_hist_{id(message)}", help="Regenerate"):
+                    # Find the user message before this one
+                    msg_idx = st.session_state.messages.index(message)
+                    if msg_idx > 0:
+                        st.session_state.messages.pop(msg_idx)  # Remove old answer
+                        st.session_state["_regen_prompt"] = st.session_state.messages[msg_idx - 1]["content"]
+                        st.rerun()
             usage = message.get("token_usage", {})
             timing = message.get("timing", {})
             provider = message.get("vector_provider", "—")
@@ -651,7 +699,10 @@ if not st.session_state.messages:
 # ============================================
 # Chat Input
 # ============================================
-if prompt := st.chat_input("Ask me anything — I can search, calculate, check weather, read pages, and more..."):
+# Handle regeneration
+_regen = st.session_state.pop("_regen_prompt", None)
+
+if prompt := (_regen or st.chat_input("Ask me anything — I can search, calculate, check weather, read pages, and more...")):
     if st.session_state.uploaded_file_path:
         prompt += f"\n\n[Uploaded file available at: {st.session_state.uploaded_file_path}]"
 
@@ -682,10 +733,21 @@ if prompt := st.chat_input("Ask me anything — I can search, calculate, check w
                 if result["steps"]:
                     display_reasoning_trace(result["steps"])
 
-                # Collapsible references panel
+                # Sources pill + collapsible references
                 if sources:
-                    with st.expander("📎 View References", expanded=False):
+                    with st.expander(f"🔗 {len(sources)} sources", expanded=False):
                         st.markdown(render_references_panel(sources), unsafe_allow_html=True)
+
+                # Action bar: copy + regenerate
+                act_cols = st.columns([1, 1, 12])
+                with act_cols[0]:
+                    if st.button("📋", key=f"copy_new_{len(st.session_state.messages)}", help="Copy response"):
+                        st.session_state["_clipboard"] = result["final_answer"]
+                        st.toast("📋 Copied to clipboard!", icon="✅")
+                with act_cols[1]:
+                    if st.button("🔄", key=f"regen_new_{len(st.session_state.messages)}", help="Regenerate response"):
+                        st.session_state["_regen_prompt"] = prompt
+                        st.rerun()
 
                 # Comprehensive metrics display
                 usage = result.get("token_usage", {})
