@@ -270,40 +270,71 @@ TOOL_ICONS = {
     "read_url": "🔗", "datetime": "🕐", "doc_search": "📚",
 }
 
-
 # ============================================
 # Citation Rendering Helpers
 # ============================================
 import re as _re_app
 import html as _html_mod
+import streamlit.components.v1 as _components
+
 
 def _get_short_name(title: str) -> str:
-    """Extract a short display name from a source title (like Grok badges)."""
-    # Known patterns
+    """Extract a short display name from a source title."""
     if "wikipedia" in title.lower():
         return "Wikipedia"
     if "uploaded-document:" in title.lower() or "chunk" in title.lower():
         parts = title.split("(")[0].strip()
-        if len(parts) > 20:
-            return parts[:18] + "…"
-        return parts
-    # Shorten generic titles to first 2-3 meaningful words
+        return parts[:18] + "…" if len(parts) > 20 else parts
     words = title.replace(" — ", " ").replace(" - ", " ").split()
     if len(words) <= 3:
         return title
     return " ".join(words[:3])
 
 
-def render_citations(answer: str, sources: list) -> str:
+def _parse_llm_references(answer: str) -> list:
+    """Fallback: parse sources from the LLM's own References section."""
+    sources = []
+    ref_match = _re_app.search(r'(?:#{1,3}\s*)?References\s*\n(.*)', answer, _re_app.DOTALL | _re_app.IGNORECASE)
+    if not ref_match:
+        return sources
+    for line in ref_match.group(1).strip().split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        m = _re_app.match(r'\[(\d+)\]\s*(.+?)\s*\|\s*(https?://\S+)', line)
+        if m:
+            sources.append({"title": m.group(2).strip(), "url": m.group(3).strip()})
+            continue
+        m = _re_app.match(r'\[(\d+)\]\s*(.+?)\s*[-—]\s*(https?://\S+)', line)
+        if m:
+            sources.append({"title": m.group(2).strip(), "url": m.group(3).strip()})
+            continue
+        m = _re_app.match(r'\[(\d+)\]\s*(.+)', line)
+        if m:
+            sources.append({"title": m.group(2).strip(), "url": ""})
+    return sources
+
+
+def _strip_references(answer: str) -> str:
+    """Remove any References section from LLM output."""
+    return _re_app.sub(
+        r'\n*(?:#{1,3}\s*)?References\s*\n\s*(\[.*?)$',
+        '', answer, flags=_re_app.DOTALL | _re_app.IGNORECASE
+    ).strip()
+
+
+def render_citations(answer: str, sources: list) -> tuple:
     """
-    Replace [N] markers with Grok-style inline source badges.
-    Shows source name as a pill instead of [1].
+    Replace [N] markers with inline source badges.
+    Returns (processed_html, final_sources_list).
     """
     if not sources:
-        return answer
+        sources = _parse_llm_references(answer)
+    answer = _strip_references(answer)
 
-    # Remove LLM-generated ### References section (we render our own)
-    answer = _re_app.sub(r'###\s*References.*', '', answer, flags=_re_app.DOTALL | _re_app.IGNORECASE).strip()
+    if not sources:
+        cleaned = _re_app.sub(r'\[(\d+)\]', '', answer)
+        return cleaned, []
 
     def _cite_replace(m):
         num = int(m.group(1))
@@ -312,48 +343,57 @@ def render_citations(answer: str, sources: list) -> str:
             src = sources[idx]
             title = _html_mod.escape(src.get("title", f"Source {num}"))
             short = _html_mod.escape(_get_short_name(src.get("title", f"Source {num}")))
-            url = src.get("url", "#")
-            is_doc = url.startswith("uploaded-document:")
-            if is_doc:
+            url = src.get("url", "")
+            if not url or url.startswith("uploaded-document:"):
                 return (
                     f'<span class="src-badge">📄 {short}'
-                    f'<span class="src-tip">{title}</span>'
-                    f'</span>'
+                    f'<span class="src-tip">{title}</span></span>'
                 )
             return (
-                f'<a class="src-badge" href="{_html_mod.escape(url)}" target="_blank" rel="noopener">{short}'
-                f'<span class="src-tip">{title} — {_html_mod.escape(url)}</span>'
-                f'</a>'
+                f'<a class="src-badge" href="{_html_mod.escape(url)}" target="_blank">{short}'
+                f'<span class="src-tip">{_html_mod.escape(url)}</span></a>'
             )
-        return m.group(0)
-
-    return _re_app.sub(r'\[(\d+)\]', _cite_replace, answer)
-
-
-def render_references_panel(sources: list) -> str:
-    """Build HTML for the references panel."""
-    if not sources:
         return ""
+
+    processed = _re_app.sub(r'\[(\d+)\]', _cite_replace, answer)
+    return processed, sources
+
+
+def render_sources_panel(sources: list) -> str:
+    """Build HTML for the sources panel with hyperlinked titles."""
+    if not sources:
+        return "<p style='color:#636e80;font-size:0.8rem;'>No sources.</p>"
     items = []
     for i, src in enumerate(sources, 1):
         title = _html_mod.escape(src.get("title", f"Source {i}"))
         url = src.get("url", "")
-        is_doc = url.startswith("uploaded-document:")
+        is_doc = url.startswith("uploaded-document:") or not url
         if is_doc:
-            doc_name = _html_mod.escape(url.replace("uploaded-document:", ""))
-            items.append(
-                f'<div class="ref-item">'
-                f'<span class="ref-num">{i}.</span> 📄 {title} — <em>{doc_name}</em>'
-                f'</div>'
-            )
+            items.append(f'<div class="ref-item"><span class="ref-num">{i}.</span> 📄 {title}</div>')
         else:
             items.append(
-                f'<div class="ref-item">'
-                f'<span class="ref-num">{i}.</span> {title} — '
-                f'<a href="{_html_mod.escape(url)}" target="_blank" rel="noopener">{_html_mod.escape(url)}</a>'
-                f'</div>'
+                f'<div class="ref-item"><span class="ref-num">{i}.</span> '
+                f'<a href="{_html_mod.escape(url)}" target="_blank">{title}</a></div>'
             )
     return '<div class="ref-panel">' + "".join(items) + '</div>'
+
+
+def copy_button(text: str, key: str):
+    """Working copy button via components.html (bypasses Streamlit JS sanitization)."""
+    escaped = text.replace('\\', '\\\\').replace('`', '\\`').replace('$', '\\$').replace('</script>', '<\\/script>')
+    _components.html(f"""
+    <button id="cp_{key}" onclick="
+        navigator.clipboard.writeText(`{escaped}`).then(function(){{
+            document.getElementById('cp_{key}').innerHTML='✅';
+            setTimeout(function(){{document.getElementById('cp_{key}').innerHTML='📋'}}, 1200);
+        }});
+    " style="background:none;border:none;color:#4a5568;cursor:pointer;padding:4px 6px;
+    border-radius:5px;font-size:14px;transition:all 0.15s ease;display:inline-flex;align-items:center;"
+    title="Copy response" onmouseover="this.style.color='#a5b4fc';this.style.background='rgba(255,255,255,0.06)'"
+    onmouseout="this.style.color='#4a5568';this.style.background='none'">📋</button>
+    """, height=32)
+
+
 
 
 # ============================================
@@ -620,30 +660,30 @@ for message in st.session_state.messages:
             st.markdown(message["content"])
     elif message["role"] == "assistant":
         with st.chat_message("assistant", avatar="⚡"):
-            # Render with citations if sources available
+            # Render with citations
             msg_sources = message.get("sources", [])
-            if msg_sources:
-                st.markdown(render_citations(message["content"], msg_sources), unsafe_allow_html=True)
+            cited_html, final_sources = render_citations(message["content"], msg_sources)
+            if final_sources:
+                st.markdown(cited_html, unsafe_allow_html=True)
             else:
-                st.markdown(message["content"])
+                st.markdown(cited_html)
             if "steps" in message:
                 display_reasoning_trace(message["steps"])
-            # Sources pill + collapsible references
-            if msg_sources:
-                with st.expander(f"🔗 {len(msg_sources)} sources", expanded=False):
-                    st.markdown(render_references_panel(msg_sources), unsafe_allow_html=True)
-            # Action bar: copy (JS) + regenerate
-            _hist_escaped = _html_mod.escape(message["content"]).replace("\n", "\\n").replace("'", "\\'")
-            _msg_idx = st.session_state.messages.index(message) if message in st.session_state.messages else -1
-            st.markdown(f"""<div class="act-bar">
-                <button class="act-btn" onclick="navigator.clipboard.writeText('{_hist_escaped}');this.innerHTML='✅';setTimeout(()=>this.innerHTML='📋',1500)" title="Copy">📋</button>
-            </div>""", unsafe_allow_html=True)
-            # Regenerate via Streamlit (needs server state)
-            if st.button("🔄", key=f"regen_hist_{id(message)}", help="Regenerate", type="secondary"):
-                if _msg_idx > 0:
-                    st.session_state.messages.pop(_msg_idx)
-                    st.session_state["_regen_prompt"] = st.session_state.messages[_msg_idx - 1]["content"]
-                    st.rerun()
+            # Action row: copy | regen | sources pill
+            _act_cols = st.columns([1, 1, 2, 10])
+            with _act_cols[0]:
+                copy_button(message["content"], f"hist_{id(message)}")
+            with _act_cols[1]:
+                _msg_idx = st.session_state.messages.index(message) if message in st.session_state.messages else -1
+                if st.button("🔄", key=f"regen_{id(message)}", help="Regenerate"):
+                    if _msg_idx > 0:
+                        st.session_state.messages.pop(_msg_idx)
+                        st.session_state["_regen_prompt"] = st.session_state.messages[_msg_idx - 1]["content"]
+                        st.rerun()
+            with _act_cols[2]:
+                if final_sources:
+                    with st.popover(f"🔗 {len(final_sources)} sources"):
+                        st.markdown(render_sources_panel(final_sources), unsafe_allow_html=True)
             usage = message.get("token_usage", {})
             timing = message.get("timing", {})
             provider = message.get("vector_provider", "—")
@@ -730,26 +770,27 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
 
                 # Render answer with inline citations
                 sources = result.get("sources", [])
-                if sources:
-                    cited_answer = render_citations(result["final_answer"], sources)
-                    st.markdown(cited_answer, unsafe_allow_html=True)
+                cited_html, final_sources = render_citations(result["final_answer"], sources)
+                if final_sources:
+                    st.markdown(cited_html, unsafe_allow_html=True)
                 else:
-                    st.markdown(result["final_answer"])
+                    st.markdown(cited_html)
 
                 if result["steps"]:
                     display_reasoning_trace(result["steps"])
 
-                # Sources pill + collapsible references
-                if sources:
-                    with st.expander(f"🔗 {len(sources)} sources", expanded=False):
-                        st.markdown(render_references_panel(sources), unsafe_allow_html=True)
-
-                # Action bar: copy (JS clipboard) + regenerate
-                _answer_escaped = _html_mod.escape(result["final_answer"]).replace("\n", "\\n").replace("'", "\\'")
-                st.markdown(f"""<div class="act-bar">
-                    <button class="act-btn" onclick="navigator.clipboard.writeText('{_answer_escaped}');this.innerHTML='✅';setTimeout(()=>this.innerHTML='📋',1500)" title="Copy">📋</button>
-                    <button class="act-btn" onclick="document.querySelector('[data-testid=stChatInput] textarea').value='__REGEN__';document.querySelector('[data-testid=stChatInput] textarea').dispatchEvent(new Event('input',{{bubbles:true}}))" title="Regenerate" id="regen_new">🔄</button>
-                </div>""", unsafe_allow_html=True)
+                # Action row: copy | regen | sources pill
+                _new_cols = st.columns([1, 1, 2, 10])
+                with _new_cols[0]:
+                    copy_button(result["final_answer"], f"new_{len(st.session_state.messages)}")
+                with _new_cols[1]:
+                    if st.button("🔄", key=f"regen_new_{len(st.session_state.messages)}", help="Regenerate"):
+                        st.session_state["_regen_prompt"] = prompt
+                        st.rerun()
+                with _new_cols[2]:
+                    if final_sources:
+                        with st.popover(f"🔗 {len(final_sources)} sources"):
+                            st.markdown(render_sources_panel(final_sources), unsafe_allow_html=True)
 
                 # Comprehensive metrics display
                 usage = result.get("token_usage", {})
@@ -786,7 +827,7 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                     "token_usage": usage,
                     "timing": timing,
                     "vector_provider": provider,
-                    "sources": sources,
+                    "sources": final_sources,
                 })
             except ValueError as e:
                 st.error(str(e))
