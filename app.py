@@ -164,68 +164,73 @@ st.markdown("""
 .token-bar .sep { color: rgba(255,255,255,0.15); }
 .token-bar .prov { background: rgba(99,102,241,0.15); padding: 0.15rem 0.45rem; border-radius: 4px; color: #a5b4fc; font-weight: 600; }
 
-/* Inline Source Badges (Grok-style) */
+/* Source Badges — clean oval pills like Grok */
 .src-badge {
-    display: inline-flex; align-items: center; gap: 3px;
-    font-size: 0.7rem; font-weight: 600;
-    color: #94a3b8; background: rgba(148,163,184,0.12);
-    padding: 1px 8px; border-radius: 10px; margin: 0 2px;
+    display: inline-flex; align-items: center;
+    font-size: 0.68rem; font-weight: 500; letter-spacing: 0.01em;
+    color: #8b95a5; background: rgba(255,255,255,0.06);
+    padding: 2px 10px; border-radius: 12px; margin: 0 2px;
     cursor: pointer; text-decoration: none;
-    border: 1px solid rgba(148,163,184,0.15);
-    transition: all 0.15s ease; position: relative;
-    vertical-align: middle; line-height: 1.6;
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: all 0.2s ease; position: relative;
+    vertical-align: middle; white-space: nowrap;
 }
 .src-badge:hover {
-    background: rgba(99,102,241,0.2); color: #a5b4fc;
-    border-color: rgba(99,102,241,0.3);
+    background: rgba(99,102,241,0.15); color: #a5b4fc;
+    border-color: rgba(99,102,241,0.25);
 }
 .src-badge .src-tip {
     visibility: hidden; opacity: 0;
-    position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%);
-    background: #1e1b4b; color: #e0e7ff; padding: 6px 10px;
-    border-radius: 6px; font-size: 0.72rem; white-space: nowrap;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.5); z-index: 999;
-    pointer-events: none; transition: opacity 0.15s ease;
-    font-weight: 400; max-width: 400px;
+    position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+    background: #1a1a2e; color: #c8d1e0; padding: 8px 12px;
+    border-radius: 8px; font-size: 0.72rem; white-space: nowrap;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.6); z-index: 9999;
+    pointer-events: none; transition: opacity 0.2s ease;
+    font-weight: 400; max-width: 420px;
     overflow: hidden; text-overflow: ellipsis;
+    border: 1px solid rgba(255,255,255,0.06);
+}
+.src-badge .src-tip::after {
+    content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    border: 5px solid transparent; border-top-color: #1a1a2e;
 }
 .src-badge:hover .src-tip { visibility: visible; opacity: 1; }
 
-/* Sources Summary Pill */
+/* Sources summary pill at bottom */
 .sources-pill {
     display: inline-flex; align-items: center; gap: 6px;
-    font-size: 0.75rem; color: #94a3b8;
-    background: rgba(148,163,184,0.08); border: 1px solid rgba(148,163,184,0.12);
-    padding: 4px 12px; border-radius: 14px; margin-top: 0.5rem;
-    cursor: pointer; transition: all 0.15s ease;
+    font-size: 0.72rem; color: #8b95a5;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    padding: 4px 14px; border-radius: 14px; margin-top: 0.4rem;
+    cursor: pointer; transition: all 0.2s ease;
 }
-.sources-pill:hover { background: rgba(99,102,241,0.12); color: #a5b4fc; }
+.sources-pill:hover { background: rgba(99,102,241,0.1); color: #a5b4fc; }
 
-/* References Panel */
-.ref-panel {
-    padding: 0.5rem 0; font-size: 0.78rem;
-}
+/* References panel inside expander */
+.ref-panel { padding: 0.3rem 0; font-size: 0.76rem; }
 .ref-item {
-    padding: 0.3rem 0; color: #94a3b8; line-height: 1.5;
-    display: flex; align-items: flex-start; gap: 0.4rem;
+    padding: 0.35rem 0; color: #8b95a5; line-height: 1.5;
+    display: flex; align-items: flex-start; gap: 0.5rem;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
 }
-.ref-item a {
-    color: #818cf8; text-decoration: none; word-break: break-all;
-}
+.ref-item:last-child { border-bottom: none; }
+.ref-item a { color: #818cf8; text-decoration: none; word-break: break-all; font-size: 0.72rem; }
 .ref-item a:hover { text-decoration: underline; color: #a5b4fc; }
-.ref-num { font-weight: 700; color: #636e80; min-width: 1.2rem; }
+.ref-num { font-weight: 600; color: #636e80; min-width: 1rem; font-size: 0.72rem; }
+.ref-title { font-weight: 500; color: #94a3b8; }
 
-/* Action Icons */
-.action-bar {
-    display: flex; align-items: center; gap: 0.3rem; margin-top: 0.4rem;
+/* Action bar — small, minimal, Grok-style */
+.act-bar {
+    display: flex; align-items: center; gap: 2px; margin-top: 0.3rem; padding: 0;
 }
-.action-bar button {
-    background: none; border: none; color: #636e80;
-    cursor: pointer; padding: 4px 6px; border-radius: 6px;
-    font-size: 0.85rem; transition: all 0.15s ease;
-    display: inline-flex; align-items: center;
+.act-btn {
+    background: none; border: none; color: #4a5568; cursor: pointer;
+    padding: 5px 7px; border-radius: 6px; font-size: 0.82rem;
+    transition: all 0.15s ease; display: inline-flex; align-items: center;
+    line-height: 1;
 }
-.action-bar button:hover { background: rgba(148,163,184,0.12); color: #a5b4fc; }
+.act-btn:hover { background: rgba(255,255,255,0.06); color: #a5b4fc; }
+.act-btn:active { transform: scale(0.92); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -627,20 +632,18 @@ for message in st.session_state.messages:
             if msg_sources:
                 with st.expander(f"🔗 {len(msg_sources)} sources", expanded=False):
                     st.markdown(render_references_panel(msg_sources), unsafe_allow_html=True)
-            # Action bar: copy + regenerate
-            hist_cols = st.columns([1, 1, 12])
-            with hist_cols[0]:
-                if st.button("📋", key=f"copy_hist_{id(message)}", help="Copy response"):
-                    st.session_state["_clipboard"] = message["content"]
-                    st.toast("📋 Copied!", icon="✅")
-            with hist_cols[1]:
-                if st.button("🔄", key=f"regen_hist_{id(message)}", help="Regenerate"):
-                    # Find the user message before this one
-                    msg_idx = st.session_state.messages.index(message)
-                    if msg_idx > 0:
-                        st.session_state.messages.pop(msg_idx)  # Remove old answer
-                        st.session_state["_regen_prompt"] = st.session_state.messages[msg_idx - 1]["content"]
-                        st.rerun()
+            # Action bar: copy (JS) + regenerate
+            _hist_escaped = _html_mod.escape(message["content"]).replace("\n", "\\n").replace("'", "\\'")
+            _msg_idx = st.session_state.messages.index(message) if message in st.session_state.messages else -1
+            st.markdown(f"""<div class="act-bar">
+                <button class="act-btn" onclick="navigator.clipboard.writeText('{_hist_escaped}');this.innerHTML='✅';setTimeout(()=>this.innerHTML='📋',1500)" title="Copy">📋</button>
+            </div>""", unsafe_allow_html=True)
+            # Regenerate via Streamlit (needs server state)
+            if st.button("🔄", key=f"regen_hist_{id(message)}", help="Regenerate", type="secondary"):
+                if _msg_idx > 0:
+                    st.session_state.messages.pop(_msg_idx)
+                    st.session_state["_regen_prompt"] = st.session_state.messages[_msg_idx - 1]["content"]
+                    st.rerun()
             usage = message.get("token_usage", {})
             timing = message.get("timing", {})
             provider = message.get("vector_provider", "—")
@@ -706,17 +709,20 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
     if st.session_state.uploaded_file_path:
         prompt += f"\n\n[Uploaded file available at: {st.session_state.uploaded_file_path}]"
 
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    if not _regen:
+        st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
     with st.chat_message("assistant", avatar="⚡"):
         with st.spinner("⚡ Reasoning..."):
             try:
+                # Always skip cache on regeneration
+                _force_skip = True if _regen else (not st.session_state.cache_enabled)
                 result = st.session_state.agent.run(
                     user_input=prompt,
                     session_id=st.session_state.session_id,
-                    skip_cache=not st.session_state.cache_enabled,
+                    skip_cache=_force_skip,
                 )
                 # Show cached indicator
                 if result.get("cached"):
@@ -738,16 +744,12 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                     with st.expander(f"🔗 {len(sources)} sources", expanded=False):
                         st.markdown(render_references_panel(sources), unsafe_allow_html=True)
 
-                # Action bar: copy + regenerate
-                act_cols = st.columns([1, 1, 12])
-                with act_cols[0]:
-                    if st.button("📋", key=f"copy_new_{len(st.session_state.messages)}", help="Copy response"):
-                        st.session_state["_clipboard"] = result["final_answer"]
-                        st.toast("📋 Copied to clipboard!", icon="✅")
-                with act_cols[1]:
-                    if st.button("🔄", key=f"regen_new_{len(st.session_state.messages)}", help="Regenerate response"):
-                        st.session_state["_regen_prompt"] = prompt
-                        st.rerun()
+                # Action bar: copy (JS clipboard) + regenerate
+                _answer_escaped = _html_mod.escape(result["final_answer"]).replace("\n", "\\n").replace("'", "\\'")
+                st.markdown(f"""<div class="act-bar">
+                    <button class="act-btn" onclick="navigator.clipboard.writeText('{_answer_escaped}');this.innerHTML='✅';setTimeout(()=>this.innerHTML='📋',1500)" title="Copy">📋</button>
+                    <button class="act-btn" onclick="document.querySelector('[data-testid=stChatInput] textarea').value='__REGEN__';document.querySelector('[data-testid=stChatInput] textarea').dispatchEvent(new Event('input',{{bubbles:true}}))" title="Regenerate" id="regen_new">🔄</button>
+                </div>""", unsafe_allow_html=True)
 
                 # Comprehensive metrics display
                 usage = result.get("token_usage", {})
