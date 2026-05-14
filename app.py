@@ -316,6 +316,10 @@ def init_session_state():
         st.session_state.cache_enabled = True
     if "audit_enabled" not in st.session_state:
         st.session_state.audit_enabled = True
+    if "selected_model" not in st.session_state:
+        st.session_state.selected_model = "x-ai/grok-4.1-fast"
+    if "selected_auditor_model" not in st.session_state:
+        st.session_state.selected_auditor_model = "google/gemini-2.0-flash-exp:free"
     # Restore indexed_docs tracker into the doc_store (survives Streamlit reruns)
     if st.session_state.indexed_docs and hasattr(st.session_state.agent, 'doc_store'):
         try:
@@ -329,6 +333,21 @@ TOOL_ICONS = {
     "web_search": "🌐", "calculator": "🧮", "read_file": "📄",
     "python_executor": "🐍", "weather": "🌤️", "wikipedia": "📖",
     "read_url": "🔗", "datetime": "🕐", "doc_search": "📚",
+}
+
+# Available models for dropdowns
+AGENT_MODELS = {
+    "Grok 4.1 Fast 💰": "x-ai/grok-4.1-fast",
+    "Llama 4 Scout 🆓": "meta-llama/llama-4-scout:free",
+    "Nemotron 3 Super 120B 🆓": "nvidia/nemotron-3-super-120b-a12b:free",
+    "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
+    "GPT-OSS 120B 🆓": "openai/gpt-oss-120b:free",
+}
+AUDITOR_MODELS = {
+    "Gemini 2.0 Flash 🆓": "google/gemini-2.0-flash-exp:free",
+    "Nemotron 3 Nano 30B 🆓": "nvidia/nemotron-3-nano-30b-a3b:free",
+    "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
+    "GPT-OSS 20B 🆓": "openai/gpt-oss-20b:free",
 }
 
 # ============================================
@@ -642,15 +661,20 @@ with st.sidebar:
             st.rerun()
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-    # --- Model ---
-    st.markdown('<div class="sb-section">🤖 Model</div>', unsafe_allow_html=True)
-    model_name = os.getenv("DEFAULT_MODEL", "x-ai/grok-4.1-fast")
-    st.markdown(f"""
-    <div class="model-card">
-        <span class="dot dot-green"></span><span class="mname">{model_name.split('/')[-1]}</span>
-        <div class="mprov">via OpenRouter</div>
-    </div>
-    """, unsafe_allow_html=True)
+    # --- Model Selection ---
+    st.markdown('<div class="sb-section">🤖 Agent Model</div>', unsafe_allow_html=True)
+    _model_names = list(AGENT_MODELS.keys())
+    _current_model_id = st.session_state.selected_model
+    _current_idx = list(AGENT_MODELS.values()).index(_current_model_id) if _current_model_id in AGENT_MODELS.values() else 0
+    _sel_name = st.selectbox("Agent Model", _model_names, index=_current_idx, label_visibility="collapsed")
+    st.session_state.selected_model = AGENT_MODELS[_sel_name]
+
+    st.markdown('<div class="sb-section">🛡️ Auditor Model</div>', unsafe_allow_html=True)
+    _aud_names = list(AUDITOR_MODELS.keys())
+    _current_aud_id = st.session_state.selected_auditor_model
+    _current_aud_idx = list(AUDITOR_MODELS.values()).index(_current_aud_id) if _current_aud_id in AUDITOR_MODELS.values() else 0
+    _sel_aud = st.selectbox("Auditor Model", _aud_names, index=_current_aud_idx, label_visibility="collapsed")
+    st.session_state.selected_auditor_model = AUDITOR_MODELS[_sel_aud]
 
     # --- Tools ---
     st.markdown('<div class="sb-section">🔧 Tools</div>', unsafe_allow_html=True)
@@ -867,8 +891,11 @@ for message in st.session_state.messages:
             llm_ms = timing.get("llm_ms", 0)
             vs_ms = timing.get("vector_search_ms", 0)
             if usage.get("total_tokens", 0) > 0 or total_ms > 0:
+                _hist_model = message.get("model", "").split('/')[-1].replace(':free', '') or "—"
                 st.markdown(f"""
                 <div class="token-bar">
+                    <span class="prov">🤖 {_hist_model}</span>
+                    <span class="sep">|</span>
                     <span class="prov">🗄️ {provider}</span>
                     <span class="sep">|</span>
                     <span>⏱️ Total <span class="tk">{total_ms:,.0f}ms</span></span>
@@ -944,6 +971,8 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                     user_input=prompt,
                     session_id=st.session_state.session_id,
                     skip_cache=_force_skip,
+                    model=st.session_state.selected_model,
+                    auditor_model=st.session_state.selected_auditor_model,
                 )
                 # Show cached indicator
                 if result.get("cached"):
@@ -981,8 +1010,11 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                 llm_ms = timing.get("llm_ms", 0)
                 vs_ms = timing.get("vector_search_ms", 0)
 
+                _model_short = st.session_state.selected_model.split('/')[-1].replace(':free', '')
                 st.markdown(f"""
                 <div class="token-bar">
+                    <span class="prov">🤖 {_model_short}</span>
+                    <span class="sep">|</span>
                     <span class="prov">🗄️ {provider}</span>
                     <span class="sep">|</span>
                     <span>⏱️ Total <span class="tk">{total_ms:,.0f}ms</span></span>
@@ -1016,6 +1048,7 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                     "vector_provider": provider,
                     "sources": final_sources,
                     "audit": audit_data,
+                    "model": st.session_state.selected_model,
                 })
             except ValueError as e:
                 st.error(str(e))

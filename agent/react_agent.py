@@ -172,9 +172,14 @@ class ReactAgent:
             },
         }
 
-    def run(self, user_input: str, session_id: str = None, skip_cache: bool = False) -> dict:
+    def run(self, user_input: str, session_id: str = None, skip_cache: bool = False,
+            model: str = None, auditor_model: str = None) -> dict:
         """
         Run the ReAct agent on a user query.
+        
+        Args:
+            model: Override the LLM model for this run (e.g. 'meta-llama/llama-4-scout:free').
+            auditor_model: Override the auditor LLM model for this run.
         
         Returns dict with: final_answer, steps, session_id, cached, token_usage, timing
         """
@@ -227,7 +232,7 @@ class ReactAgent:
         # ============================================
         for iteration in range(self.max_iterations):
             t_llm = time.time()
-            llm_response = chat_completion(messages)
+            llm_response = chat_completion(messages, model=model) if model else chat_completion(messages)
             llm_time_ms += (time.time() - t_llm) * 1000
             accumulate_usage(token_usage, get_last_usage())
             parsed = parse_llm_output(llm_response)
@@ -263,6 +268,7 @@ class ReactAgent:
                             sources=all_sources,
                             token_usage=token_usage,
                             timing=_timing,
+                            auditor_model=auditor_model,
                         )
                     except Exception:
                         pass
@@ -338,7 +344,7 @@ class ReactAgent:
 
         try:
             t_llm = time.time()
-            final_response = chat_completion(messages)
+            final_response = chat_completion(messages, model=model) if model else chat_completion(messages)
             llm_time_ms += (time.time() - t_llm) * 1000
             accumulate_usage(token_usage, get_last_usage())
             final_parsed = parse_llm_output(final_response)
@@ -376,6 +382,7 @@ class ReactAgent:
                     sources=all_sources,
                     token_usage=token_usage,
                     timing=_timing,
+                    auditor_model=auditor_model,
                 )
             except Exception:
                 pass
