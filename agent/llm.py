@@ -63,7 +63,7 @@ def _get_secret(key: str, default: str = "") -> str:
 
 
 OPENROUTER_API_KEY = _get_secret("OPENROUTER_API_KEY", "")
-DEFAULT_MODEL = _get_secret("DEFAULT_MODEL", "x-ai/grok-4.1-fast")
+DEFAULT_MODEL = _get_secret("DEFAULT_MODEL", "meta-llama/llama-4-scout:free")
 
 
 def get_headers() -> dict:

@@ -317,7 +317,7 @@ def init_session_state():
     if "audit_enabled" not in st.session_state:
         st.session_state.audit_enabled = True
     if "selected_model" not in st.session_state:
-        st.session_state.selected_model = "x-ai/grok-4.1-fast"
+        st.session_state.selected_model = "meta-llama/llama-4-scout:free"
     if "selected_auditor_model" not in st.session_state:
         st.session_state.selected_auditor_model = "google/gemini-2.0-flash-exp:free"
     # Restore indexed_docs tracker into the doc_store (survives Streamlit reruns)
@@ -337,7 +337,6 @@ TOOL_ICONS = {
 
 # Available models for dropdowns
 AGENT_MODELS = {
-    "Grok 4.1 Fast 💰": "x-ai/grok-4.1-fast",
     "Llama 4 Scout 🆓": "meta-llama/llama-4-scout:free",
     "Nemotron 3 Super 120B 🆓": "nvidia/nemotron-3-super-120b-a12b:free",
     "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
@@ -790,7 +789,7 @@ with st.sidebar:
 st.markdown("""
 <div class="hero">
     <h1>⚡ AI Agent</h1>
-    <div class="subtitle">Autonomous reasoning & tool execution — Powered by Grok</div>
+    <div class="subtitle">Autonomous reasoning & tool execution — Multi-Model via OpenRouter</div>
     <div class="badge-row">
         <span class="hbadge">🌐 Web Search</span>
         <span class="hbadge">🧮 Calculator</span>
@@ -1056,4 +1055,4 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
             except Exception as e:
                 st.error(f"❌ {str(e)}")
 
-st.markdown('<div class="footer">Built with ❤️ — AI Agent • Powered by Grok via OpenRouter • PostgreSQL + Pinecone/Weaviate/Qdrant + Redis</div>', unsafe_allow_html=True)
+st.markdown('<div class="footer">Built with ❤️ — AI Agent • Multi-Model via OpenRouter • PostgreSQL + Pinecone/Weaviate/Qdrant + Redis</div>', unsafe_allow_html=True)
