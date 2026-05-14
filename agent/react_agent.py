@@ -6,8 +6,9 @@ The brain of the AI agent. Implements the ReAct
 - Redis caching for LLM and tool responses
 - Supabase/SQLite memory for conversations
 - Multi-provider RAG for document search (Pinecone, Weaviate, Qdrant)
+- Post-response auditing (Quality Scorer, Fact Checker, Cost Auditor)
 
-    Thought → Action → Observation → ... → Final Answer
+    Thought → Action → Observation → ... → Final Answer → Audit
 """
 
 import os
@@ -34,6 +35,7 @@ from tools.wikipedia_tool import wikipedia_tool
 from tools.url_reader_tool import url_reader_tool
 from tools.datetime_tool import datetime_tool
 from tools.rag_search_tool import rag_search_tool, set_document_store
+from agent.auditor import run_full_audit
 import re as _re
 
 
@@ -103,9 +105,10 @@ class ReactAgent:
     with caching, cloud memory, and RAG capabilities.
     """
 
-    def __init__(self, max_iterations: int = None, vector_provider: str = "pinecone"):
+    def __init__(self, max_iterations: int = None, vector_provider: str = "pinecone", audit_enabled: bool = True):
         self.max_iterations = max_iterations or int(os.getenv("MAX_ITERATIONS", "10"))
         self.prompt_template = load_prompt_template()
+        self.audit_enabled = audit_enabled
 
         # Initialize infrastructure
         self.memory, self.memory_backend = get_memory()
@@ -243,19 +246,37 @@ class ReactAgent:
                 self.cache.set("llm", user_input, parsed.final_answer)
                 self.memory.add_message(session_id, "assistant", parsed.final_answer)
 
+                _timing = {
+                    "total_ms": round((time.time() - run_start) * 1000, 1),
+                    "llm_ms": round(llm_time_ms, 1),
+                    "vector_search_ms": round(vector_search_ms, 1),
+                }
+
+                # Run auditor (never blocks response)
+                audit_report = None
+                if self.audit_enabled:
+                    try:
+                        audit_report = run_full_audit(
+                            query=user_input,
+                            answer=parsed.final_answer,
+                            steps=steps,
+                            sources=all_sources,
+                            token_usage=token_usage,
+                            timing=_timing,
+                        )
+                    except Exception:
+                        pass
+
                 return {
                     "final_answer": parsed.final_answer,
                     "steps": steps,
                     "session_id": session_id,
                     "cached": False,
                     "token_usage": token_usage,
-                    "timing": {
-                        "total_ms": round((time.time() - run_start) * 1000, 1),
-                        "llm_ms": round(llm_time_ms, 1),
-                        "vector_search_ms": round(vector_search_ms, 1),
-                    },
+                    "timing": _timing,
                     "vector_provider": self.doc_store.provider_name,
                     "sources": all_sources,
+                    "audit": audit_report.to_dict() if audit_report else None,
                 }
 
             elif isinstance(parsed, AgentAction):
@@ -338,19 +359,37 @@ class ReactAgent:
 
         self.memory.add_message(session_id, "assistant", fallback_answer)
 
+        _timing = {
+            "total_ms": round((time.time() - run_start) * 1000, 1),
+            "llm_ms": round(llm_time_ms, 1),
+            "vector_search_ms": round(vector_search_ms, 1),
+        }
+
+        # Run auditor on fallback answer too
+        audit_report = None
+        if self.audit_enabled:
+            try:
+                audit_report = run_full_audit(
+                    query=user_input,
+                    answer=fallback_answer,
+                    steps=steps,
+                    sources=all_sources,
+                    token_usage=token_usage,
+                    timing=_timing,
+                )
+            except Exception:
+                pass
+
         return {
             "final_answer": fallback_answer,
             "steps": steps,
             "session_id": session_id,
             "cached": False,
             "token_usage": token_usage,
-            "timing": {
-                "total_ms": round((time.time() - run_start) * 1000, 1),
-                "llm_ms": round(llm_time_ms, 1),
-                "vector_search_ms": round(vector_search_ms, 1),
-            },
+            "timing": _timing,
             "vector_provider": self.doc_store.provider_name,
             "sources": all_sources,
+            "audit": audit_report.to_dict() if audit_report else None,
         }
 
     def get_available_tools(self) -> list[dict]:

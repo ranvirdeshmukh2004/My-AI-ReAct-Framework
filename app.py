@@ -231,6 +231,65 @@ st.markdown("""
 }
 .act-btn:hover { background: rgba(255,255,255,0.06); color: #a5b4fc; }
 .act-btn:active { transform: scale(0.92); }
+
+/* Audit Panel */
+.audit-panel {
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px; padding: 0.8rem 1rem; margin-top: 0.3rem;
+    font-size: 0.78rem; color: #94a3b8;
+}
+.audit-section { margin-bottom: 0.6rem; }
+.audit-section:last-child { margin-bottom: 0; }
+.audit-title {
+    font-weight: 600; font-size: 0.72rem; text-transform: uppercase;
+    letter-spacing: 0.05em; color: #636e80; margin-bottom: 0.4rem;
+    display: flex; align-items: center; gap: 0.3rem;
+}
+.audit-score-row {
+    display: flex; align-items: center; gap: 0.5rem; margin: 0.25rem 0;
+}
+.audit-label { min-width: 5.5rem; color: #8b95a5; font-size: 0.74rem; }
+.audit-bar-bg {
+    flex: 1; height: 6px; background: rgba(255,255,255,0.06);
+    border-radius: 3px; overflow: hidden; max-width: 120px;
+}
+.audit-bar-fill {
+    height: 100%; border-radius: 3px;
+    transition: width 0.3s ease;
+}
+.bar-high { background: linear-gradient(90deg, #34d399, #6ee7b7); }
+.bar-mid { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
+.bar-low { background: linear-gradient(90deg, #f87171, #ef4444); }
+.audit-val { font-weight: 600; font-size: 0.74rem; min-width: 2rem; }
+.audit-overall {
+    font-size: 1.1rem; font-weight: 700; color: #e2e8f0;
+    display: flex; align-items: center; gap: 0.3rem;
+}
+.audit-summary { color: #8b95a5; font-size: 0.74rem; font-style: italic; margin-top: 0.2rem; }
+.fact-item {
+    display: flex; align-items: flex-start; gap: 0.4rem;
+    padding: 0.2rem 0; font-size: 0.74rem; line-height: 1.4;
+}
+.fact-icon { flex-shrink: 0; }
+.fact-claim { color: #cbd5e1; }
+.fact-evidence { color: #636e80; font-size: 0.7rem; }
+.cost-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 0.4rem; margin-top: 0.3rem;
+}
+.cost-item {
+    background: rgba(255,255,255,0.03); border-radius: 6px; padding: 0.3rem 0.5rem; text-align: center;
+}
+.cost-val { font-weight: 600; color: #e2e8f0; font-size: 0.82rem; }
+.cost-lbl { font-size: 0.66rem; color: #636e80; }
+.eff-badge {
+    display: inline-flex; padding: 2px 8px; border-radius: 8px;
+    font-size: 0.7rem; font-weight: 600;
+}
+.eff-optimal { background: rgba(52,211,153,0.15); color: #34d399; }
+.eff-good { background: rgba(99,102,241,0.15); color: #a5b4fc; }
+.eff-fair { background: rgba(251,191,36,0.15); color: #fbbf24; }
+.eff-wasteful { background: rgba(248,113,113,0.15); color: #f87171; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -255,6 +314,8 @@ def init_session_state():
         st.session_state.indexed_docs = {}
     if "cache_enabled" not in st.session_state:
         st.session_state.cache_enabled = True
+    if "audit_enabled" not in st.session_state:
+        st.session_state.audit_enabled = True
     # Restore indexed_docs tracker into the doc_store (survives Streamlit reruns)
     if st.session_state.indexed_docs and hasattr(st.session_state.agent, 'doc_store'):
         try:
@@ -393,6 +454,118 @@ def copy_button(text: str, key: str):
     onmouseout="this.style.color='#4a5568';this.style.background='none'">📋</button>
     """, height=32)
 
+
+def render_audit_panel(audit_data: dict) -> str:
+    """Build HTML for the audit report panel."""
+    if not audit_data:
+        return ""
+
+    html_parts = []
+
+    # --- Quality Score Section ---
+    q = audit_data.get("quality")
+    if q:
+        overall = q.get("overall", 0)
+        # Overall score with emoji
+        if overall >= 8:
+            grade_emoji = "🟢"
+        elif overall >= 6:
+            grade_emoji = "🟡"
+        else:
+            grade_emoji = "🔴"
+
+        def _bar(val):
+            pct = val * 10
+            cls = "bar-high" if val >= 7 else ("bar-mid" if val >= 5 else "bar-low")
+            color = "#34d399" if val >= 7 else ("#fbbf24" if val >= 5 else "#f87171")
+            return (f'<div class="audit-bar-bg"><div class="audit-bar-fill {cls}" '
+                    f'style="width:{pct}%"></div></div>'
+                    f'<span class="audit-val" style="color:{color}">{val}/10</span>')
+
+        html_parts.append(f'''
+        <div class="audit-section">
+            <div class="audit-title">📊 Quality Score</div>
+            <div class="audit-overall">{grade_emoji} {overall}/10</div>
+            <div class="audit-score-row"><span class="audit-label">Accuracy</span>{_bar(q.get("accuracy", 0))}</div>
+            <div class="audit-score-row"><span class="audit-label">Completeness</span>{_bar(q.get("completeness", 0))}</div>
+            <div class="audit-score-row"><span class="audit-label">Relevance</span>{_bar(q.get("relevance", 0))}</div>
+            <div class="audit-score-row"><span class="audit-label">Citations</span>{_bar(q.get("citation_quality", 0))}</div>
+            <div class="audit-summary">{_html_mod.escape(q.get("summary", ""))}</div>
+        </div>''')
+
+    # --- Fact Check Section ---
+    fc = audit_data.get("fact_check")
+    if fc and fc.get("total_claims", 0) > 0:
+        verified = fc.get("verified", 0)
+        total = fc.get("total_claims", 0)
+        hallucinated = fc.get("hallucinated", 0)
+
+        if hallucinated > 0:
+            fc_emoji = "⚠️"
+            fc_color = "#f87171"
+        elif verified == total:
+            fc_emoji = "✅"
+            fc_color = "#34d399"
+        else:
+            fc_emoji = "🔍"
+            fc_color = "#fbbf24"
+
+        claims_html = ""
+        for c in fc.get("claims", []):
+            status = c.get("status", "unverified")
+            if status == "verified":
+                icon = "✅"
+            elif status == "hallucinated":
+                icon = "❌"
+            else:
+                icon = "⚠️"
+            claim_text = _html_mod.escape(c.get("claim", ""))
+            evidence = _html_mod.escape(c.get("evidence", ""))
+            claims_html += f'''<div class="fact-item">
+                <span class="fact-icon">{icon}</span>
+                <div><span class="fact-claim">{claim_text}</span>
+                <br><span class="fact-evidence">{evidence}</span></div>
+            </div>'''
+
+        html_parts.append(f'''
+        <div class="audit-section">
+            <div class="audit-title">🔍 Fact Check</div>
+            <div style="color:{fc_color};font-weight:600;font-size:0.82rem;margin-bottom:0.3rem">
+                {fc_emoji} {verified}/{total} claims verified
+            </div>
+            {claims_html}
+        </div>''')
+
+    # --- Cost / Efficiency Section ---
+    cost = audit_data.get("cost")
+    if cost:
+        rating = cost.get("efficiency_rating", "Good")
+        rating_cls = f"eff-{rating.lower()}"
+        total_ms = cost.get("total_ms", 0)
+        total_tokens = cost.get("total_tokens", 0)
+        tool_calls = cost.get("tool_calls", 0)
+        iterations = cost.get("iterations", 0)
+
+        suggestions_html = ""
+        for s in cost.get("suggestions", []):
+            suggestions_html += f'<div style="padding:0.15rem 0;font-size:0.72rem">{_html_mod.escape(s)}</div>'
+
+        html_parts.append(f'''
+        <div class="audit-section">
+            <div class="audit-title">💰 Efficiency <span class="eff-badge {rating_cls}">{rating}</span></div>
+            <div class="cost-grid">
+                <div class="cost-item"><div class="cost-val">{iterations}</div><div class="cost-lbl">Steps</div></div>
+                <div class="cost-item"><div class="cost-val">{tool_calls}</div><div class="cost-lbl">Tool Calls</div></div>
+                <div class="cost-item"><div class="cost-val">{total_tokens:,}</div><div class="cost-lbl">Tokens</div></div>
+                <div class="cost-item"><div class="cost-val">{total_ms/1000:.1f}s</div><div class="cost-lbl">Time</div></div>
+            </div>
+            {suggestions_html}
+        </div>''')
+
+    if not html_parts:
+        return ""
+
+    return '<div class="audit-panel">' + "".join(html_parts) + '</div>'
 
 
 
@@ -582,6 +755,9 @@ with st.sidebar:
     st.session_state.cache_enabled = st.toggle("⚡ Enable Cache", value=st.session_state.cache_enabled,
                                                 help="Disable to force fresh LLM + vector DB calls (for benchmarking)")
 
+    st.session_state.audit_enabled = st.toggle("🛡️ Enable Audit", value=st.session_state.audit_enabled,
+                                                help="Post-response quality scoring, fact checking & efficiency analysis")
+    st.session_state.agent.audit_enabled = st.session_state.audit_enabled
 
 
 # ============================================
@@ -710,6 +886,11 @@ for message in st.session_state.messages:
                     <span>Calls <span class="tk">{usage.get('llm_calls', 0)}</span></span>
                 </div>
                 """, unsafe_allow_html=True)
+            # Audit panel (history replay)
+            msg_audit = message.get("audit")
+            if msg_audit:
+                with st.expander("🛡️ Audit Report", expanded=False):
+                    st.markdown(render_audit_panel(msg_audit), unsafe_allow_html=True)
 
 # Welcome state
 if not st.session_state.messages:
@@ -820,6 +1001,12 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                 </div>
                 """, unsafe_allow_html=True)
 
+                # Audit panel (new response)
+                audit_data = result.get("audit")
+                if audit_data:
+                    with st.expander("🛡️ Audit Report", expanded=True):
+                        st.markdown(render_audit_panel(audit_data), unsafe_allow_html=True)
+
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": result["final_answer"],
@@ -828,6 +1015,7 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                     "timing": timing,
                     "vector_provider": provider,
                     "sources": final_sources,
+                    "audit": audit_data,
                 })
             except ValueError as e:
                 st.error(str(e))
