@@ -290,6 +290,46 @@ st.markdown("""
 .eff-good { background: rgba(99,102,241,0.15); color: #a5b4fc; }
 .eff-fair { background: rgba(251,191,36,0.15); color: #fbbf24; }
 .eff-wasteful { background: rgba(248,113,113,0.15); color: #f87171; }
+
+/* Validation Panel Styles */
+.val-panel {
+    background: rgba(52,211,153,0.04); border: 1px solid rgba(52,211,153,0.12);
+    border-radius: 10px; padding: 0.7rem; margin-top: 0.3rem;
+}
+.val-section {
+    padding: 0.4rem 0; border-bottom: 1px solid rgba(52,211,153,0.08);
+}
+.val-section:last-child { border-bottom: none; }
+.val-title {
+    font-size: 0.8rem; font-weight: 600; color: #34d399;
+    margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.3rem;
+}
+.val-overall {
+    font-size: 1.1rem; font-weight: 700; color: #e2e8f0;
+    display: flex; align-items: center; gap: 0.3rem;
+}
+.val-bar-bg {
+    flex: 1; height: 8px; background: rgba(255,255,255,0.06);
+    border-radius: 4px; overflow: hidden; max-width: 150px;
+}
+.val-bar-fill {
+    height: 100%; border-radius: 4px;
+    background: linear-gradient(90deg, #34d399, #6ee7b7);
+    transition: width 0.4s ease;
+}
+.val-check {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.15rem 0; font-size: 0.74rem; color: #cbd5e1;
+}
+.val-check-icon { flex-shrink: 0; font-size: 0.8rem; }
+.val-detail { color: #636e80; font-size: 0.7rem; }
+.val-agree-badge {
+    display: inline-flex; padding: 2px 8px; border-radius: 8px;
+    font-size: 0.7rem; font-weight: 600;
+}
+.agree-full { background: rgba(52,211,153,0.15); color: #34d399; }
+.agree-partial { background: rgba(251,191,36,0.15); color: #fbbf24; }
+.agree-contradiction { background: rgba(248,113,113,0.15); color: #f87171; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -320,6 +360,8 @@ def init_session_state():
         st.session_state.selected_model = "meta-llama/llama-4-scout:free"
     if "selected_auditor_model" not in st.session_state:
         st.session_state.selected_auditor_model = "google/gemini-2.0-flash-exp:free"
+    if "validator_enabled" not in st.session_state:
+        st.session_state.validator_enabled = True
     # Restore indexed_docs tracker into the doc_store (survives Streamlit reruns)
     if st.session_state.indexed_docs and hasattr(st.session_state.agent, 'doc_store'):
         try:
@@ -586,6 +628,141 @@ def render_audit_panel(audit_data: dict) -> str:
     return '<div class="audit-panel">' + "".join(html_parts) + '</div>'
 
 
+def render_validation_panel(val_data: dict) -> str:
+    """Build HTML for the validation report panel."""
+    if not val_data:
+        return ""
+
+    overall = val_data.get("overall_score", 0)
+    if overall >= 8:
+        grade_emoji = "🟢"
+    elif overall >= 6:
+        grade_emoji = "🟡"
+    else:
+        grade_emoji = "🔴"
+
+    pct = overall * 10
+
+    html_parts = [f'''
+    <div class="val-section">
+        <div class="val-title">✅ Validation Score</div>
+        <div class="val-overall">{grade_emoji} {overall}/10</div>
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.3rem">
+            <div class="val-bar-bg" style="max-width:200px">
+                <div class="val-bar-fill" style="width:{pct}%"></div>
+            </div>
+        </div>
+    </div>''']
+
+    # --- Consensus Section ---
+    con = val_data.get("consensus")
+    if con and con.get("agreement") != "not_run":
+        agree = con.get("agreement", "partial")
+        agree_cls = f"agree-{agree}"
+        c_score = con.get("score", 0)
+        v_model = con.get("validator_model", "").split("/")[-1].replace(":free", "")
+
+        diffs_html = ""
+        for d in con.get("differences", []):
+            diffs_html += f'<div class="val-check"><span class="val-check-icon">⚠️</span>{_html_mod.escape(str(d)[:120])}</div>'
+
+        html_parts.append(f'''
+        <div class="val-section">
+            <div class="val-title">🤖 Consensus ({c_score}/10)
+                <span class="val-agree-badge {agree_cls}">{agree.upper()}</span>
+            </div>
+            <div class="val-detail">Verified by: {v_model}</div>
+            <div class="val-check"><span class="val-check-icon">📝</span>
+                <span class="val-detail">Agent: {_html_mod.escape(con.get("agent_summary", "")[:150])}</span>
+            </div>
+            <div class="val-check"><span class="val-check-icon">🔍</span>
+                <span class="val-detail">Validator: {_html_mod.escape(con.get("validator_summary", "")[:150])}</span>
+            </div>
+            {diffs_html}
+        </div>''')
+
+    # --- Math Section ---
+    math = val_data.get("math")
+    if math:
+        m_score = math.get("score", 10)
+        if math.get("skipped"):
+            html_parts.append(f'''
+            <div class="val-section">
+                <div class="val-title">🧮 Math ({m_score}/10)</div>
+                <div class="val-detail">No calculations to verify — auto pass</div>
+            </div>''')
+        else:
+            checks_html = ""
+            for c in math.get("checks", []):
+                icon = "✅" if c.get("match") else "❌"
+                checks_html += (
+                    f'<div class="val-check"><span class="val-check-icon">{icon}</span>'
+                    f'<code>{_html_mod.escape(str(c.get("expression", ""))[:60])}</code> = '
+                    f'{_html_mod.escape(str(c.get("verified_result", ""))[:30])}</div>'
+                )
+            html_parts.append(f'''
+            <div class="val-section">
+                <div class="val-title">🧮 Math ({m_score}/10)</div>
+                <div class="val-detail">{math.get("passed", 0)}/{math.get("total_checks", 0)} calculations verified</div>
+                {checks_html}
+            </div>''')
+
+    # --- Tool Re-run Section ---
+    tr = val_data.get("tool_rerun")
+    if tr:
+        t_score = tr.get("score", 10)
+        if tr.get("skipped"):
+            html_parts.append(f'''
+            <div class="val-section">
+                <div class="val-title">🔧 Tool Re-run ({t_score}/10)</div>
+                <div class="val-detail">No deterministic tools to re-verify — auto pass</div>
+            </div>''')
+        else:
+            checks_html = ""
+            for c in tr.get("checks", []):
+                icon = "✅" if c.get("match") else "❌"
+                checks_html += (
+                    f'<div class="val-check"><span class="val-check-icon">{icon}</span>'
+                    f'{_html_mod.escape(str(c.get("tool", "")))} → '
+                    f'{_html_mod.escape(str(c.get("fresh_output", ""))[:60])}</div>'
+                )
+            html_parts.append(f'''
+            <div class="val-section">
+                <div class="val-title">🔧 Tool Re-run ({t_score}/10)</div>
+                <div class="val-detail">{tr.get("passed", 0)}/{tr.get("total_checks", 0)} tools re-verified</div>
+                {checks_html}
+            </div>''')
+
+    # --- Source URL Section ---
+    src = val_data.get("source_url")
+    if src:
+        s_score = src.get("score", 10)
+        if src.get("skipped"):
+            html_parts.append(f'''
+            <div class="val-section">
+                <div class="val-title">🔗 Sources ({s_score}/10)</div>
+                <div class="val-detail">No URLs to verify — auto pass</div>
+            </div>''')
+        else:
+            checks_html = ""
+            for c in src.get("checks", []):
+                icon = "✅" if c.get("accessible") else "❌"
+                status = c.get("status_code", 0)
+                err = c.get("error", "")
+                detail = f"HTTP {status}" if status else err
+                checks_html += (
+                    f'<div class="val-check"><span class="val-check-icon">{icon}</span>'
+                    f'<span class="val-detail">{_html_mod.escape(str(c.get("url", ""))[:80])} — {detail}</span></div>'
+                )
+            html_parts.append(f'''
+            <div class="val-section">
+                <div class="val-title">🔗 Sources ({s_score}/10)</div>
+                <div class="val-detail">{src.get("accessible", 0)}/{src.get("total_checks", 0)} URLs accessible</div>
+                {checks_html}
+            </div>''')
+
+    return '<div class="val-panel">' + "".join(html_parts) + '</div>'
+
 
 # ============================================
 # Sidebar
@@ -782,6 +959,9 @@ with st.sidebar:
                                                 help="Post-response quality scoring, fact checking & efficiency analysis")
     st.session_state.agent.audit_enabled = st.session_state.audit_enabled
 
+    st.session_state.validator_enabled = st.toggle("✅ Enable Validator", value=st.session_state.validator_enabled,
+                                                    help="Independent verification via multi-model consensus, math checks & source validation")
+    st.session_state.agent.validator_enabled = st.session_state.validator_enabled
 
 # ============================================
 # Header
@@ -917,6 +1097,11 @@ for message in st.session_state.messages:
             if msg_audit:
                 with st.expander("🛡️ Audit Report", expanded=False):
                     st.markdown(render_audit_panel(msg_audit), unsafe_allow_html=True)
+            # Validation panel (history replay)
+            msg_val = message.get("validation")
+            if msg_val:
+                with st.expander("✅ Validation Report", expanded=False):
+                    st.markdown(render_validation_panel(msg_val), unsafe_allow_html=True)
 
 # Welcome state
 if not st.session_state.messages:
@@ -1038,6 +1223,12 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                     with st.expander("🛡️ Audit Report", expanded=True):
                         st.markdown(render_audit_panel(audit_data), unsafe_allow_html=True)
 
+                # Validation panel (new response)
+                validation_data = result.get("validation")
+                if validation_data:
+                    with st.expander("✅ Validation Report", expanded=True):
+                        st.markdown(render_validation_panel(validation_data), unsafe_allow_html=True)
+
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": result["final_answer"],
@@ -1047,6 +1238,7 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                     "vector_provider": provider,
                     "sources": final_sources,
                     "audit": audit_data,
+                    "validation": validation_data,
                     "model": st.session_state.selected_model,
                 })
             except ValueError as e:

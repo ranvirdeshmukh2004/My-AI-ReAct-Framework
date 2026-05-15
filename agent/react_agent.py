@@ -36,6 +36,7 @@ from tools.url_reader_tool import url_reader_tool
 from tools.datetime_tool import datetime_tool
 from tools.rag_search_tool import rag_search_tool, set_document_store
 from agent.auditor import run_full_audit
+from agent.validator import run_full_validation
 import re as _re
 
 
@@ -105,10 +106,12 @@ class ReactAgent:
     with caching, cloud memory, and RAG capabilities.
     """
 
-    def __init__(self, max_iterations: int = None, vector_provider: str = "pinecone", audit_enabled: bool = True):
+    def __init__(self, max_iterations: int = None, vector_provider: str = "pinecone",
+                 audit_enabled: bool = True, validator_enabled: bool = True):
         self.max_iterations = max_iterations or int(os.getenv("MAX_ITERATIONS", "10"))
         self.prompt_template = load_prompt_template()
         self.audit_enabled = audit_enabled
+        self.validator_enabled = validator_enabled
 
         # Initialize infrastructure
         self.memory, self.memory_backend = get_memory()
@@ -273,6 +276,20 @@ class ReactAgent:
                     except Exception:
                         pass
 
+                # Run validator (never blocks response)
+                validation_report = None
+                if self.validator_enabled:
+                    try:
+                        validation_report = run_full_validation(
+                            query=user_input,
+                            answer=parsed.final_answer,
+                            steps=steps,
+                            sources=all_sources,
+                            agent_model=model or "",
+                        )
+                    except Exception:
+                        pass
+
                 return {
                     "final_answer": parsed.final_answer,
                     "steps": steps,
@@ -283,6 +300,7 @@ class ReactAgent:
                     "vector_provider": self.doc_store.provider_name,
                     "sources": all_sources,
                     "audit": audit_report.to_dict() if audit_report else None,
+                    "validation": validation_report.to_dict() if validation_report else None,
                 }
 
             elif isinstance(parsed, AgentAction):
@@ -387,6 +405,20 @@ class ReactAgent:
             except Exception:
                 pass
 
+        # Run validator on fallback answer too
+        validation_report = None
+        if self.validator_enabled:
+            try:
+                validation_report = run_full_validation(
+                    query=user_input,
+                    answer=fallback_answer,
+                    steps=steps,
+                    sources=all_sources,
+                    agent_model=model or "",
+                )
+            except Exception:
+                pass
+
         return {
             "final_answer": fallback_answer,
             "steps": steps,
@@ -397,6 +429,7 @@ class ReactAgent:
             "vector_provider": self.doc_store.provider_name,
             "sources": all_sources,
             "audit": audit_report.to_dict() if audit_report else None,
+            "validation": validation_report.to_dict() if validation_report else None,
         }
 
     def get_available_tools(self) -> list[dict]:
