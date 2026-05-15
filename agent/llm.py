@@ -80,7 +80,7 @@ def chat_completion(
     messages: list[dict],
     model: str = DEFAULT_MODEL,
     temperature: float = 0.7,
-    max_tokens: int = 2048,
+    max_tokens: int = 8192,
     stream: bool = False,
 ) -> str:
     """
@@ -114,6 +114,7 @@ def chat_completion(
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
+        "include_reasoning": False,  # Prevent DeepSeek/reasoning models from leaking thinking tokens
     }
 
     # Retry logic — try up to 3 times with increasing delays
@@ -171,7 +172,7 @@ def stream_chat_completion(
     messages: list[dict],
     model: str = DEFAULT_MODEL,
     temperature: float = 0.7,
-    max_tokens: int = 2048,
+    max_tokens: int = 8192,
 ):
     """
     Stream a chat completion response from OpenRouter.

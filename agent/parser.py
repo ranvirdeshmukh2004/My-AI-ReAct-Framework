@@ -69,6 +69,16 @@ def parse_llm_output(text: str) -> ParseResult:
         return AgentFinish(thought="", final_answer="I wasn't able to generate a response. Please try again.")
     text = text.strip()
 
+    # --- Strip reasoning/thinking tags from DeepSeek and similar models ---
+    # These models wrap internal chain-of-thought in <think>...</think> tags
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    # Also handle unclosed <think> tags (model got cut off mid-thinking)
+    text = re.sub(r"<think>.*", "", text, flags=re.DOTALL).strip()
+
+    # If after stripping think tags there's nothing left, return error
+    if not text:
+        return AgentFinish(thought="", final_answer="I wasn't able to generate a response. Please try again.")
+
     # --- Check for Final Answer first ---
     final_answer_match = re.search(
         r"Final\s*Answer\s*:\s*(.*)",
