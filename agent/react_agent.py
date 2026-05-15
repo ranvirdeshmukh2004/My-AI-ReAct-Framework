@@ -235,7 +235,8 @@ class ReactAgent:
         # ============================================
         for iteration in range(self.max_iterations):
             t_llm = time.time()
-            llm_response = chat_completion(messages, model=model) if model else chat_completion(messages)
+            _react_stop = ["Observation:", "\nObservation"]
+            llm_response = chat_completion(messages, model=model, stop=_react_stop) if model else chat_completion(messages, stop=_react_stop)
             llm_time_ms += (time.time() - t_llm) * 1000
             accumulate_usage(token_usage, get_last_usage())
             parsed = parse_llm_output(llm_response)

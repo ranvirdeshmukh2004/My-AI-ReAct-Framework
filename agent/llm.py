@@ -79,9 +79,10 @@ def get_headers() -> dict:
 def chat_completion(
     messages: list[dict],
     model: str = DEFAULT_MODEL,
-    temperature: float = 0.7,
+    temperature: float = 0.3,
     max_tokens: int = 8192,
     stream: bool = False,
+    stop: list[str] | None = None,
 ) -> str:
     """
     Send a chat completion request to OpenRouter.
@@ -93,6 +94,7 @@ def chat_completion(
         temperature: Controls randomness (0.0 = deterministic, 1.0 = creative).
         max_tokens: Maximum tokens in the response.
         stream: Whether to stream the response (not used in basic mode).
+        stop: Optional list of stop sequences to halt generation.
     
     Returns:
         The assistant's response text.
@@ -115,8 +117,9 @@ def chat_completion(
         "temperature": temperature,
         "max_tokens": max_tokens,
         "include_reasoning": False,  # Prevent DeepSeek/reasoning models from leaking thinking tokens
-        "stop": ["Observation:", "\nObservation"],  # Force stop after Action Input — don't let model simulate tool output
     }
+    if stop:
+        payload["stop"] = stop
 
     # Retry logic — try up to 3 times with increasing delays
     max_retries = 3
@@ -172,7 +175,7 @@ def chat_completion(
 def stream_chat_completion(
     messages: list[dict],
     model: str = DEFAULT_MODEL,
-    temperature: float = 0.7,
+    temperature: float = 0.3,
     max_tokens: int = 8192,
 ):
     """
