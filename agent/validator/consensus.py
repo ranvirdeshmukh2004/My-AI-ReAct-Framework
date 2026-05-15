@@ -14,12 +14,13 @@ from agent.llm import chat_completion
 
 # Model rotation map: if agent uses X, validator uses Y
 _MODEL_ROTATION = {
-    "meta-llama/llama-4-scout:free": "google/gemma-4-31b-it:free",
-    "google/gemma-4-31b-it:free": "meta-llama/llama-4-scout:free",
-    "nvidia/nemotron-3-super-120b-a12b:free": "google/gemma-4-31b-it:free",
-    "openai/gpt-oss-120b:free": "meta-llama/llama-4-scout:free",
+    "deepseek/deepseek-chat-v3-0324:free": "google/gemma-3-27b-it:free",
+    "google/gemma-3-27b-it:free": "deepseek/deepseek-chat-v3-0324:free",
+    "meta-llama/llama-4-scout:free": "google/gemma-3-27b-it:free",
+    "google/gemma-4-31b-it:free": "deepseek/deepseek-chat-v3-0324:free",
+    "nvidia/nemotron-3-super-120b-a12b:free": "google/gemma-3-27b-it:free",
 }
-_DEFAULT_VALIDATOR_MODEL = "google/gemma-4-31b-it:free"
+_DEFAULT_VALIDATOR_MODEL = "google/gemma-3-27b-it:free"
 
 
 def _pick_validator_model(agent_model: str, explicit_model: str = None) -> str:
