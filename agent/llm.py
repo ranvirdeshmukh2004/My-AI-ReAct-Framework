@@ -63,7 +63,7 @@ def _get_secret(key: str, default: str = "") -> str:
 
 
 OPENROUTER_API_KEY = _get_secret("OPENROUTER_API_KEY", "")
-DEFAULT_MODEL = _get_secret("DEFAULT_MODEL", "deepseek/deepseek-chat-v3-0324:free")
+DEFAULT_MODEL = _get_secret("DEFAULT_MODEL", "deepseek/deepseek-v4-flash:free")
 
 
 def get_headers() -> dict:

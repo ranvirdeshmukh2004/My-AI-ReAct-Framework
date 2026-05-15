@@ -357,9 +357,9 @@ def init_session_state():
     if "audit_enabled" not in st.session_state:
         st.session_state.audit_enabled = True
     if "selected_model" not in st.session_state:
-        st.session_state.selected_model = "deepseek/deepseek-chat-v3-0324:free"
+        st.session_state.selected_model = "deepseek/deepseek-v4-flash:free"
     if "selected_auditor_model" not in st.session_state:
-        st.session_state.selected_auditor_model = "google/gemini-2.0-flash-exp:free"
+        st.session_state.selected_auditor_model = "google/gemma-4-31b-it:free"
     if "validator_enabled" not in st.session_state:
         st.session_state.validator_enabled = True
     # Restore indexed_docs tracker into the doc_store (survives Streamlit reruns)
@@ -379,17 +379,17 @@ TOOL_ICONS = {
 
 # Available models for dropdowns
 AGENT_MODELS = {
-    "DeepSeek V3 685B 🆓": "deepseek/deepseek-chat-v3-0324:free",
-    "Gemma 3 27B 🆓": "google/gemma-3-27b-it:free",
-    "Llama 4 Scout 🆓": "meta-llama/llama-4-scout:free",
-    "Nemotron 3 Super 120B 🆓": "nvidia/nemotron-3-super-120b-a12b:free",
+    "DeepSeek V4 Flash 284B 🆓": "deepseek/deepseek-v4-flash:free",
     "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
+    "Llama 3.3 70B 🆓": "meta-llama/llama-3.3-70b-instruct:free",
+    "Nemotron 3 Super 120B 🆓": "nvidia/nemotron-3-super-120b-a12b:free",
+    "GPT-OSS 120B 🆓": "openai/gpt-oss-120b:free",
 }
 AUDITOR_MODELS = {
-    "Gemini 2.0 Flash 🆓": "google/gemini-2.0-flash-exp:free",
-    "Gemma 3 27B 🆓": "google/gemma-3-27b-it:free",
-    "DeepSeek V3 685B 🆓": "deepseek/deepseek-chat-v3-0324:free",
+    "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
+    "DeepSeek V4 Flash 284B 🆓": "deepseek/deepseek-v4-flash:free",
     "Nemotron 3 Nano 30B 🆓": "nvidia/nemotron-3-nano-30b-a3b:free",
+    "GPT-OSS 20B 🆓": "openai/gpt-oss-20b:free",
 }
 
 # ============================================
