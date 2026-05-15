@@ -227,7 +227,7 @@ class ReactAgent:
         all_sources = []  # Accumulated sources across all tool calls
         messages = [
             {"role": "system", "content": full_system_prompt},
-            {"role": "user", "content": f"Remember: Start with 'Thought:' and use tools when appropriate. For math, ALWAYS use the calculator tool.\n\nUser query: {user_input}"},
+            {"role": "user", "content": f"Answer the following query. Start with 'Thought:' and output ONE action at a time. STOP after 'Action Input:' — do NOT write 'Observation:'.\n\nUser query: {user_input}"},
         ]
 
         # ============================================

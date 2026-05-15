@@ -115,6 +115,7 @@ def chat_completion(
         "temperature": temperature,
         "max_tokens": max_tokens,
         "include_reasoning": False,  # Prevent DeepSeek/reasoning models from leaking thinking tokens
+        "stop": ["Observation:", "\nObservation"],  # Force stop after Action Input — don't let model simulate tool output
     }
 
     # Retry logic — try up to 3 times with increasing delays
