@@ -384,6 +384,8 @@ TOOL_ICONS = {
 
 # Available models for dropdowns
 AGENT_MODELS = {
+    "⚡ Llama 4 Scout (Groq)": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
+    "⚡ Llama 4 Maverick (Groq)": "groq::meta-llama/llama-4-maverick-17b-128e-instruct",
     "DeepSeek V4 Flash 284B 🆓": "deepseek/deepseek-v4-flash:free",
     "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
     "Llama 3.3 70B 🆓": "meta-llama/llama-3.3-70b-instruct:free",
@@ -391,6 +393,7 @@ AGENT_MODELS = {
     "GPT-OSS 120B 🆓": "openai/gpt-oss-120b:free",
 }
 AUDITOR_MODELS = {
+    "⚡ Llama 4 Scout (Groq)": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
     "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
     "DeepSeek V4 Flash 284B 🆓": "deepseek/deepseek-v4-flash:free",
     "Nemotron 3 Nano 30B 🆓": "nvidia/nemotron-3-nano-30b-a3b:free",
@@ -1258,7 +1261,7 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                 llm_ms = timing.get("llm_ms", 0)
                 vs_ms = timing.get("vector_search_ms", 0)
 
-                _model_short = st.session_state.selected_model.split('/')[-1].replace(':free', '')
+                _model_short = st.session_state.selected_model.replace('groq::', '').split('/')[-1].replace(':free', '')
                 st.markdown(f"""
                 <div class="token-bar">
                     <span class="prov">🤖 {_model_short}</span>

@@ -47,6 +47,7 @@ def accumulate_usage(accumulator: dict, usage: dict) -> None:
 # ============================================
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 
 def _get_secret(key: str, default: str = "") -> str:
@@ -63,6 +64,7 @@ def _get_secret(key: str, default: str = "") -> str:
 
 
 OPENROUTER_API_KEY = _get_secret("OPENROUTER_API_KEY", "")
+GROQ_API_KEY = _get_secret("GROQ_API_KEY", "")
 DEFAULT_MODEL = _get_secret("DEFAULT_MODEL", "deepseek/deepseek-v4-flash:free")
 
 # Fallback models to try when the primary model is rate-limited (429)
@@ -71,6 +73,40 @@ FREE_MODEL_FALLBACKS = [
     "google/gemma-4-31b-it:free",
     "meta-llama/llama-3.3-70b-instruct:free",
 ]
+
+# Groq models use a special prefix so we know to route to Groq API
+GROQ_MODEL_PREFIX = "groq::"
+
+
+def _is_groq_model(model: str) -> bool:
+    """Check if a model should be routed to Groq."""
+    return model.startswith(GROQ_MODEL_PREFIX)
+
+
+def _groq_model_id(model: str) -> str:
+    """Strip the groq:: prefix to get the actual Groq model ID."""
+    return model[len(GROQ_MODEL_PREFIX):]
+
+
+def _get_api_config(model: str) -> tuple:
+    """
+    Get the API URL, headers, and model ID based on provider.
+    Returns: (api_url, headers, actual_model_id)
+    """
+    if _is_groq_model(model):
+        return (
+            GROQ_API_URL,
+            {
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            _groq_model_id(model),
+        )
+    return (
+        OPENROUTER_API_URL,
+        get_headers(),
+        model,
+    )
 
 
 def get_headers() -> dict:
@@ -110,7 +146,10 @@ def chat_completion(
         Exception: If the API call fails after retries.
     """
     # Validate API key
-    if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_key_here":
+    if _is_groq_model(model):
+        if not GROQ_API_KEY:
+            raise ValueError("🔑 Groq API key not set! Get a free key at: https://console.groq.com")
+    elif not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_key_here":
         raise ValueError(
             "🔑 OpenRouter API key not set! "
             "Please add your key to the .env file. "
@@ -118,29 +157,37 @@ def chat_completion(
         )
 
     # Build the request payload
+    api_url, headers, actual_model = _get_api_config(model)
     payload = {
-        "model": model,
+        "model": actual_model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
-        "include_reasoning": False,  # Prevent DeepSeek/reasoning models from leaking thinking tokens
     }
+    # OpenRouter-specific options
+    if not _is_groq_model(model):
+        payload["include_reasoning"] = False
     if stop:
         payload["stop"] = stop
 
-    # Retry logic — cycle through fallback models on 429
-    models_to_try = [model] + [m for m in FREE_MODEL_FALLBACKS if m != model]
+    # Groq models: direct call, no fallback cycling
+    if _is_groq_model(model):
+        models_to_try = [model]
+    else:
+        models_to_try = [model] + [m for m in FREE_MODEL_FALLBACKS if m != model]
+
     max_retries = len(models_to_try)
     current_model = model
     for attempt in range(max_retries):
         try:
             current_model = models_to_try[attempt]
-            payload["model"] = current_model
+            api_url, headers, actual_model = _get_api_config(current_model)
+            payload["model"] = actual_model
             # Make the API call with a generous timeout
             with httpx.Client(timeout=120.0) as client:
                 response = client.post(
-                    OPENROUTER_API_URL,
-                    headers=get_headers(),
+                    api_url,
+                    headers=headers,
                     json=payload,
                 )
 
@@ -156,7 +203,7 @@ def chat_completion(
                         except Exception:
                             pass
                     else:
-                        wait = 0  # 404 = model doesn't exist, skip immediately
+                        wait = 0
                     next_model = models_to_try[attempt + 1] if attempt + 1 < len(models_to_try) else "?"
                     print(f"⏳ {current_model.split('/')[-1]} {'rate limited' if response.status_code == 429 else 'not found'}. Trying {next_model.split('/')[-1]}...")
                     if wait:
@@ -171,7 +218,7 @@ def chat_completion(
             if response.status_code != 200:
                 error_detail = response.text
                 raise Exception(
-                    f"OpenRouter API error (HTTP {response.status_code}): {error_detail}"
+                    f"API error (HTTP {response.status_code}): {error_detail}"
                 )
 
             # Parse the response
@@ -230,34 +277,45 @@ def stream_chat_completion(
     """
     global _last_usage
 
-    if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_key_here":
+    # Validate API key
+    if _is_groq_model(model):
+        if not GROQ_API_KEY:
+            raise ValueError("🔑 Groq API key not set! Get a free key at: https://console.groq.com")
+    elif not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_key_here":
         raise ValueError(
             "🔑 OpenRouter API key not set! "
             "Get a free key at: https://openrouter.ai/keys"
         )
 
+    api_url, headers, actual_model = _get_api_config(model)
     payload = {
-        "model": model,
+        "model": actual_model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
         "stream": True,
-        "include_reasoning": False,
     }
+    if not _is_groq_model(model):
+        payload["include_reasoning"] = False
     if stop:
         payload["stop"] = stop
 
-    # Retry loop — cycle through fallback models on 429
-    models_to_try = [model] + [m for m in FREE_MODEL_FALLBACKS if m != model]
+    # Groq: direct call; OpenRouter: cycle fallbacks on 429
+    if _is_groq_model(model):
+        models_to_try = [model]
+    else:
+        models_to_try = [model] + [m for m in FREE_MODEL_FALLBACKS if m != model]
+
     max_retries = len(models_to_try)
     for attempt in range(max_retries):
         current_model = models_to_try[attempt]
-        payload["model"] = current_model
+        api_url, headers, actual_model = _get_api_config(current_model)
+        payload["model"] = actual_model
         with httpx.Client(timeout=120.0) as client:
             with client.stream(
                 "POST",
-                OPENROUTER_API_URL,
-                headers=get_headers(),
+                api_url,
+                headers=headers,
                 json=payload,
             ) as response:
                 # Handle rate limiting (429) or model not found (404) — skip to next
