@@ -343,6 +343,9 @@ def init_session_state():
     if "vector_provider" not in st.session_state:
         st.session_state.vector_provider = "pinecone"
     if "agent" not in st.session_state or not hasattr(st.session_state.agent, "run_stream"):
+        import importlib
+        import agent.react_agent as _agent_mod
+        importlib.reload(_agent_mod)
         from agent.react_agent import ReactAgent
         st.session_state.agent = ReactAgent(vector_provider=st.session_state.get("vector_provider", "pinecone"))
     if "session_id" not in st.session_state:
