@@ -68,10 +68,12 @@ GROQ_API_KEY = _get_secret("GROQ_API_KEY", "")
 DEFAULT_MODEL = _get_secret("DEFAULT_MODEL", "deepseek/deepseek-v4-flash:free")
 
 # Fallback models to try when the primary model is rate-limited (429)
+# Last resort: Groq (separate rate limits, won't be blocked by OpenRouter traffic)
 FREE_MODEL_FALLBACKS = [
     "deepseek/deepseek-v4-flash:free",
     "google/gemma-4-31b-it:free",
     "meta-llama/llama-3.3-70b-instruct:free",
+    "groq::meta-llama/llama-4-scout-17b-16e-instruct",  # Groq fallback
 ]
 
 # Groq models use a special prefix so we know to route to Groq API
