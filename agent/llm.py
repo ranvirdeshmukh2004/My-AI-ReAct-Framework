@@ -121,19 +121,38 @@ def chat_completion(
     if stop:
         payload["stop"] = stop
 
-    # Retry logic — try up to 3 times with increasing delays
-    max_retries = 3
+    # Retry logic — try up to 4 times with rate-limit awareness
+    max_retries = 4
     for attempt in range(max_retries):
         try:
             # Make the API call with a generous timeout
-            with httpx.Client(timeout=60.0) as client:
+            with httpx.Client(timeout=120.0) as client:
                 response = client.post(
                     OPENROUTER_API_URL,
                     headers=get_headers(),
                     json=payload,
                 )
 
-            # Check for HTTP errors
+            # Handle rate limiting (429) — wait and retry
+            if response.status_code == 429:
+                if attempt < max_retries - 1:
+                    import time as _time
+                    # Extract retry-after from response, default to exponential backoff
+                    try:
+                        err_data = response.json()
+                        wait = err_data.get("error", {}).get("metadata", {}).get("retry_after_seconds", None)
+                    except Exception:
+                        wait = None
+                    wait = int(wait or (2 ** (attempt + 1)))  # Fallback: 2s, 4s, 8s, 16s
+                    print(f"⏳ Rate limited (429). Retrying in {wait}s... (attempt {attempt + 1}/{max_retries})")
+                    _time.sleep(wait)
+                    continue
+                else:
+                    raise Exception(
+                        "❌ Rate limited after multiple retries. Free-tier models are busy — please wait a moment and try again."
+                    )
+
+            # Check for other HTTP errors
             if response.status_code != 200:
                 error_detail = response.text
                 raise Exception(
@@ -155,13 +174,13 @@ def chat_completion(
 
         except httpx.TimeoutException:
             if attempt < max_retries - 1:
-                import time
-                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                import time as _time
+                wait_time = 2 ** (attempt + 1)
                 print(f"⏳ Request timed out. Retrying in {wait_time}s...")
-                time.sleep(wait_time)
+                _time.sleep(wait_time)
             else:
                 raise Exception(
-                    "❌ OpenRouter API timed out after 3 attempts. "
+                    "❌ OpenRouter API timed out after multiple attempts. "
                     "Please check your internet connection."
                 )
 
@@ -213,42 +232,67 @@ def stream_chat_completion(
     if stop:
         payload["stop"] = stop
 
-    with httpx.Client(timeout=120.0) as client:
-        with client.stream(
-            "POST",
-            OPENROUTER_API_URL,
-            headers=get_headers(),
-            json=payload,
-        ) as response:
-            if response.status_code != 200:
-                # Read error body for better diagnostics
-                error_body = ""
-                try:
-                    for chunk in response.iter_text():
-                        error_body += chunk
-                except Exception:
-                    pass
-                raise Exception(f"OpenRouter API error (HTTP {response.status_code}): {error_body}")
+    # Retry loop for rate limiting
+    max_retries = 4
+    for attempt in range(max_retries):
+        with httpx.Client(timeout=120.0) as client:
+            with client.stream(
+                "POST",
+                OPENROUTER_API_URL,
+                headers=get_headers(),
+                json=payload,
+            ) as response:
+                # Handle rate limiting (429)
+                if response.status_code == 429:
+                    if attempt < max_retries - 1:
+                        import time as _time
+                        error_body = ""
+                        try:
+                            for chunk in response.iter_text():
+                                error_body += chunk
+                            import json as _json
+                            err_data = _json.loads(error_body)
+                            wait = err_data.get("error", {}).get("metadata", {}).get("retry_after_seconds", None)
+                        except Exception:
+                            wait = None
+                        wait = int(wait or (2 ** (attempt + 1)))
+                        print(f"⏳ Stream rate limited (429). Retrying in {wait}s... (attempt {attempt + 1}/{max_retries})")
+                        _time.sleep(wait)
+                        continue  # Retry
+                    else:
+                        raise Exception(
+                            "❌ Rate limited after multiple retries. Free-tier models are busy — please wait a moment and try again."
+                        )
 
-            # Parse SSE (Server-Sent Events) stream
-            for line in response.iter_lines():
-                if line.startswith("data: "):
-                    data_str = line[6:]  # Remove "data: " prefix
-
-                    # Stream end signal
-                    if data_str.strip() == "[DONE]":
-                        break
-
+                if response.status_code != 200:
+                    error_body = ""
                     try:
-                        data = json.loads(data_str)
-                        # Capture usage if present (usually in last chunk)
-                        if "usage" in data:
-                            _last_usage = data["usage"]
-                        # Extract the delta content
-                        delta = data["choices"][0].get("delta", {})
-                        content = delta.get("content", "")
-                        if content:
-                            yield content
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        continue  # Skip malformed chunks
+                        for chunk in response.iter_text():
+                            error_body += chunk
+                    except Exception:
+                        pass
+                    raise Exception(f"OpenRouter API error (HTTP {response.status_code}): {error_body}")
+
+                # Parse SSE (Server-Sent Events) stream
+                for line in response.iter_lines():
+                    if line.startswith("data: "):
+                        data_str = line[6:]  # Remove "data: " prefix
+
+                        # Stream end signal
+                        if data_str.strip() == "[DONE]":
+                            return
+
+                        try:
+                            data = json.loads(data_str)
+                            # Capture usage if present (usually in last chunk)
+                            if "usage" in data:
+                                _last_usage = data["usage"]
+                            # Extract the delta content
+                            delta = data["choices"][0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                yield content
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue  # Skip malformed chunks
+                return  # Success — exit retry loop
 
