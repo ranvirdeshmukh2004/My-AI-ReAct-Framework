@@ -660,112 +660,69 @@ def render_validation_panel(val_data: dict) -> str:
         </div>
     </div>''']
 
-    # --- Consensus Section ---
-    con = val_data.get("consensus")
-    if con and con.get("agreement") != "not_run":
-        agree = con.get("agreement", "partial")
-        agree_cls = f"agree-{agree}"
-        c_score = con.get("score", 0)
-        v_model = con.get("validator_model", "").split("/")[-1].replace(":free", "")
+    # --- Quality Breakdown ---
+    quality = val_data.get("quality")
+    if quality:
+        eval_model = quality.get("evaluator_model", "").split("/")[-1].replace(":free", "")
+        reasoning = _html_mod.escape(quality.get("reasoning", "")[:250])
 
-        diffs_html = ""
-        for d in con.get("differences", []):
-            diffs_html += f'<div class="val-check"><span class="val-check-icon">⚠️</span>{_html_mod.escape(str(d)[:120])}</div>'
+        criteria = [
+            ("📌 Relevance", quality.get("relevance", 5)),
+            ("📋 Completeness", quality.get("completeness", 5)),
+            ("✅ Accuracy", quality.get("accuracy", 5)),
+            ("📝 Clarity", quality.get("clarity", 5)),
+            ("💡 Helpfulness", quality.get("helpfulness", 5)),
+        ]
+
+        bars_html = ""
+        for label, score in criteria:
+            bar_pct = score * 10
+            if score >= 8:
+                bar_color = "#4ade80"
+            elif score >= 6:
+                bar_color = "#fbbf24"
+            else:
+                bar_color = "#f87171"
+
+            bars_html += f'''
+            <div style="display:flex;align-items:center;gap:0.5rem;margin:0.25rem 0">
+                <span style="min-width:130px;font-size:0.82rem;color:#bbb">{label}</span>
+                <div class="val-bar-bg" style="flex:1;max-width:160px">
+                    <div class="val-bar-fill" style="width:{bar_pct}%;background:{bar_color}"></div>
+                </div>
+                <span style="font-size:0.82rem;color:#eee;min-width:30px;font-weight:600">{score}/10</span>
+            </div>'''
+
+        reasoning_html = ""
+        if reasoning:
+            reasoning_html = f'<div class="val-detail" style="margin-top:0.5rem;font-style:italic">💭 "{reasoning}"</div>'
 
         html_parts.append(f'''
         <div class="val-section">
-            <div class="val-title">🤖 Consensus ({c_score}/10)
-                <span class="val-agree-badge {agree_cls}">{agree.upper()}</span>
-            </div>
-            <div class="val-detail">Verified by: {v_model}</div>
-            <div class="val-check"><span class="val-check-icon">📝</span>
-                <span class="val-detail">Agent: {_html_mod.escape(con.get("agent_summary", "")[:150])}</span>
-            </div>
-            <div class="val-check"><span class="val-check-icon">🔍</span>
-                <span class="val-detail">Validator: {_html_mod.escape(con.get("validator_summary", "")[:150])}</span>
-            </div>
-            {diffs_html}
+            <div class="val-title">📊 Quality Breakdown</div>
+            <div class="val-detail" style="margin-bottom:0.4rem">Evaluated by: {eval_model}</div>
+            {bars_html}
+            {reasoning_html}
         </div>''')
 
-    # --- Math Section ---
+    # --- Math Bonus Section (only when calculator was used) ---
     math = val_data.get("math")
-    if math:
+    if math and not math.get("skipped"):
         m_score = math.get("score", 10)
-        if math.get("skipped"):
-            html_parts.append(f'''
-            <div class="val-section">
-                <div class="val-title">🧮 Math ({m_score}/10)</div>
-                <div class="val-detail">No calculations to verify — auto pass</div>
-            </div>''')
-        else:
-            checks_html = ""
-            for c in math.get("checks", []):
-                icon = "✅" if c.get("match") else "❌"
-                checks_html += (
-                    f'<div class="val-check"><span class="val-check-icon">{icon}</span>'
-                    f'<code>{_html_mod.escape(str(c.get("expression", ""))[:60])}</code> = '
-                    f'{_html_mod.escape(str(c.get("verified_result", ""))[:30])}</div>'
-                )
-            html_parts.append(f'''
-            <div class="val-section">
-                <div class="val-title">🧮 Math ({m_score}/10)</div>
-                <div class="val-detail">{math.get("passed", 0)}/{math.get("total_checks", 0)} calculations verified</div>
-                {checks_html}
-            </div>''')
-
-    # --- Tool Re-run Section ---
-    tr = val_data.get("tool_rerun")
-    if tr:
-        t_score = tr.get("score", 10)
-        if tr.get("skipped"):
-            html_parts.append(f'''
-            <div class="val-section">
-                <div class="val-title">🔧 Tool Re-run ({t_score}/10)</div>
-                <div class="val-detail">No deterministic tools to re-verify — auto pass</div>
-            </div>''')
-        else:
-            checks_html = ""
-            for c in tr.get("checks", []):
-                icon = "✅" if c.get("match") else "❌"
-                checks_html += (
-                    f'<div class="val-check"><span class="val-check-icon">{icon}</span>'
-                    f'{_html_mod.escape(str(c.get("tool", "")))} → '
-                    f'{_html_mod.escape(str(c.get("fresh_output", ""))[:60])}</div>'
-                )
-            html_parts.append(f'''
-            <div class="val-section">
-                <div class="val-title">🔧 Tool Re-run ({t_score}/10)</div>
-                <div class="val-detail">{tr.get("passed", 0)}/{tr.get("total_checks", 0)} tools re-verified</div>
-                {checks_html}
-            </div>''')
-
-    # --- Source URL Section ---
-    src = val_data.get("source_url")
-    if src:
-        s_score = src.get("score", 10)
-        if src.get("skipped"):
-            html_parts.append(f'''
-            <div class="val-section">
-                <div class="val-title">🔗 Sources ({s_score}/10)</div>
-                <div class="val-detail">No URLs to verify — auto pass</div>
-            </div>''')
-        else:
-            checks_html = ""
-            for c in src.get("checks", []):
-                icon = "✅" if c.get("accessible") else "❌"
-                status = c.get("status_code", 0)
-                err = c.get("error", "")
-                detail = f"HTTP {status}" if status else err
-                checks_html += (
-                    f'<div class="val-check"><span class="val-check-icon">{icon}</span>'
-                    f'<span class="val-detail">{_html_mod.escape(str(c.get("url", ""))[:80])} — {detail}</span></div>'
-                )
-            html_parts.append(f'''
-            <div class="val-section">
-                <div class="val-title">🔗 Sources ({s_score}/10)</div>
-                <div class="val-detail">{src.get("accessible", 0)}/{src.get("total_checks", 0)} URLs accessible</div>
-                {checks_html}
-            </div>''')
+        checks_html = ""
+        for c in math.get("checks", []):
+            icon = "✅" if c.get("match") else "❌"
+            checks_html += (
+                f'<div class="val-check"><span class="val-check-icon">{icon}</span>'
+                f'<code>{_html_mod.escape(str(c.get("expression", ""))[:60])}</code> = '
+                f'{_html_mod.escape(str(c.get("verified_result", ""))[:30])}</div>'
+            )
+        html_parts.append(f'''
+        <div class="val-section">
+            <div class="val-title">🧮 Math Verification ({m_score}/10)</div>
+            <div class="val-detail">{math.get("passed", 0)}/{math.get("total_checks", 0)} calculations verified</div>
+            {checks_html}
+        </div>''')
 
     return '<div class="val-panel">' + "".join(html_parts) + '</div>'
 

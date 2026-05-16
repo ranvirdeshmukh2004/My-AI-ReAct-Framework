@@ -2,23 +2,52 @@
 base.py — Validation Result Dataclasses
 =========================================
 Structured containers for all validator outputs.
-Each validator produces a score (0-10) and detailed results.
+
+Primary: QualityResult — 5-criteria evaluation of every response.
+Bonus: MathResult — deterministic math re-verification (when applicable).
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
 
 
-@dataclass
-class ConsensusResult:
-    """Multi-model consensus validation result."""
-    score: int = 10                 # 0-10
-    agreement: str = "not_run"      # "full", "partial", "contradiction", "not_run"
-    agent_summary: str = ""         # Key points from agent
-    validator_summary: str = ""     # Key points from validator model
-    differences: list = field(default_factory=list)  # List of disagreement strings
-    validator_model: str = ""       # Which model verified
+# ============================================
+# Quality Evaluation (always runs)
+# ============================================
 
+@dataclass
+class QualityResult:
+    """
+    Response quality evaluation across 5 universal criteria.
+    Each scored 1-10 by an independent evaluator model.
+    """
+    relevance: int = 5          # Does it address the question?
+    completeness: int = 5       # Does it cover all parts?
+    accuracy: int = 5           # Are facts correct?
+    clarity: int = 5            # Is it well-organized?
+    helpfulness: int = 5        # Is it genuinely useful?
+    reasoning: str = ""         # Evaluator's reasoning
+    evaluator_model: str = ""   # Which model evaluated
+
+    @property
+    def weighted_score(self) -> float:
+        """
+        Weighted average:
+        Relevance 25%, Completeness 25%, Accuracy 20%, Clarity 15%, Helpfulness 15%
+        """
+        return round(
+            self.relevance * 0.25 +
+            self.completeness * 0.25 +
+            self.accuracy * 0.20 +
+            self.clarity * 0.15 +
+            self.helpfulness * 0.15,
+            1,
+        )
+
+
+# ============================================
+# Math Re-Verification (bonus, when applicable)
+# ============================================
 
 @dataclass
 class MathCheckItem:
@@ -37,96 +66,47 @@ class MathResult:
     passed: int = 0
     failed: int = 0
     checks: list = field(default_factory=list)  # list of MathCheckItem dicts
-    skipped: bool = False           # True if no math steps found (auto 10/10)
+    skipped: bool = False           # True if no math steps found
 
 
-@dataclass
-class ToolRerunItem:
-    """A single tool re-execution verification."""
-    tool: str = ""
-    input_text: str = ""
-    original_output: str = ""
-    fresh_output: str = ""
-    match: bool = True
-
-
-@dataclass
-class ToolRerunResult:
-    """Tool re-execution result."""
-    score: int = 10                 # 0-10
-    total_checks: int = 0
-    passed: int = 0
-    failed: int = 0
-    checks: list = field(default_factory=list)  # list of ToolRerunItem dicts
-    skipped: bool = False           # True if no re-runnable tools found
-
-
-@dataclass
-class SourceCheckItem:
-    """A single source URL verification."""
-    url: str = ""
-    accessible: bool = False
-    status_code: int = 0
-    error: str = ""
-
-
-@dataclass
-class SourceURLResult:
-    """Source URL accessibility result."""
-    score: int = 10                 # 0-10
-    total_checks: int = 0
-    accessible: int = 0
-    failed: int = 0
-    checks: list = field(default_factory=list)  # list of SourceCheckItem dicts
-    skipped: bool = False           # True if no sources found
-
+# ============================================
+# Combined Validation Report
+# ============================================
 
 @dataclass
 class ValidationReport:
-    """Combined validation report from all validators."""
-    consensus: ConsensusResult | None = None
+    """Combined validation report — quality-first scoring."""
+    quality: QualityResult | None = None
     math: MathResult | None = None
-    tool_rerun: ToolRerunResult | None = None
-    source_url: SourceURLResult | None = None
     overall_score: float = 0.0      # Weighted 0-10
     timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
     def __post_init__(self):
-        """Compute weighted overall score from sub-validators."""
+        """Compute overall score from quality + math bonus."""
         if self.overall_score == 0.0:
             self._compute_overall()
 
     def _compute_overall(self):
         """
-        Weighted score:
-          Consensus: 40%, Math: 20%, ToolRerun: 20%, SourceURL: 20%
-        If a validator didn't run / was skipped, redistribute its weight.
+        Overall score = Quality weighted average.
+        If math was checked and failed, apply a penalty.
+        If math was checked and passed, no bonus (it's expected).
         """
-        weights = []
-        scores = []
-
-        if self.consensus and self.consensus.agreement != "not_run":
-            weights.append(0.40)
-            scores.append(self.consensus.score)
-        if self.math:
-            weights.append(0.20)
-            scores.append(self.math.score)
-        if self.tool_rerun:
-            weights.append(0.20)
-            scores.append(self.tool_rerun.score)
-        if self.source_url:
-            weights.append(0.20)
-            scores.append(self.source_url.score)
-
-        if not weights:
+        if not self.quality:
             self.overall_score = 0.0
             return
 
-        # Normalize weights so they sum to 1.0
-        total_weight = sum(weights)
-        self.overall_score = round(
-            sum(s * (w / total_weight) for s, w in zip(scores, weights)), 1
-        )
+        base = self.quality.weighted_score
+
+        # Math penalty: if math checks failed, reduce score
+        if self.math and not self.math.skipped and self.math.total_checks > 0:
+            math_pass_rate = self.math.passed / self.math.total_checks
+            if math_pass_rate < 1.0:
+                # Penalty proportional to failure rate (max -2 points)
+                penalty = (1 - math_pass_rate) * 2.0
+                base = max(1.0, base - penalty)
+
+        self.overall_score = round(base, 1)
 
     def to_dict(self) -> dict:
         """Convert to a JSON-serializable dict for session state storage."""
@@ -135,14 +115,16 @@ class ValidationReport:
             "timestamp": self.timestamp,
         }
 
-        if self.consensus:
-            result["consensus"] = {
-                "score": self.consensus.score,
-                "agreement": self.consensus.agreement,
-                "agent_summary": self.consensus.agent_summary,
-                "validator_summary": self.consensus.validator_summary,
-                "differences": self.consensus.differences,
-                "validator_model": self.consensus.validator_model,
+        if self.quality:
+            result["quality"] = {
+                "relevance": self.quality.relevance,
+                "completeness": self.quality.completeness,
+                "accuracy": self.quality.accuracy,
+                "clarity": self.quality.clarity,
+                "helpfulness": self.quality.helpfulness,
+                "weighted_score": self.quality.weighted_score,
+                "reasoning": self.quality.reasoning,
+                "evaluator_model": self.quality.evaluator_model,
             }
 
         if self.math:
@@ -155,26 +137,6 @@ class ValidationReport:
                 "skipped": self.math.skipped,
             }
 
-        if self.tool_rerun:
-            result["tool_rerun"] = {
-                "score": self.tool_rerun.score,
-                "total_checks": self.tool_rerun.total_checks,
-                "passed": self.tool_rerun.passed,
-                "failed": self.tool_rerun.failed,
-                "checks": self.tool_rerun.checks,
-                "skipped": self.tool_rerun.skipped,
-            }
-
-        if self.source_url:
-            result["source_url"] = {
-                "score": self.source_url.score,
-                "total_checks": self.source_url.total_checks,
-                "accessible": self.source_url.accessible,
-                "failed": self.source_url.failed,
-                "checks": self.source_url.checks,
-                "skipped": self.source_url.skipped,
-            }
-
         return result
 
     @classmethod
@@ -183,27 +145,26 @@ class ValidationReport:
         if not data:
             return cls()
 
-        consensus = None
-        if "consensus" in data:
-            consensus = ConsensusResult(**data["consensus"])
+        quality = None
+        if "quality" in data:
+            q = data["quality"]
+            quality = QualityResult(
+                relevance=q.get("relevance", 5),
+                completeness=q.get("completeness", 5),
+                accuracy=q.get("accuracy", 5),
+                clarity=q.get("clarity", 5),
+                helpfulness=q.get("helpfulness", 5),
+                reasoning=q.get("reasoning", ""),
+                evaluator_model=q.get("evaluator_model", ""),
+            )
 
         math = None
         if "math" in data:
             math = MathResult(**data["math"])
 
-        tool_rerun = None
-        if "tool_rerun" in data:
-            tool_rerun = ToolRerunResult(**data["tool_rerun"])
-
-        source_url = None
-        if "source_url" in data:
-            source_url = SourceURLResult(**data["source_url"])
-
         return cls(
-            consensus=consensus,
+            quality=quality,
             math=math,
-            tool_rerun=tool_rerun,
-            source_url=source_url,
             overall_score=data.get("overall_score", 0.0),
             timestamp=data.get("timestamp", ""),
         )
