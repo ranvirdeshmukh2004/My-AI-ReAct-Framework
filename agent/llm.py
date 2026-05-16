@@ -192,7 +192,7 @@ def chat_completion(
     # Build fallback list: requested model first, then all fallbacks
     models_to_try = [model] + [m for m in FREE_MODEL_FALLBACKS if m != model]
 
-    last_error = None
+    error_trail = []  # Track all failures for diagnostics
     for attempt, current_model in enumerate(models_to_try):
         try:
             api_url, headers, actual_model = _get_api_config(current_model)
@@ -220,23 +220,23 @@ def chat_completion(
                 else:
                     raise Exception(f"Unexpected API response: {json.dumps(data)[:200]}")
 
+            # Failed — log it
+            short_name = current_model.replace('groq::', '').split('/')[-1]
+            error_trail.append(f"{short_name}→{response.status_code}")
+
             # Retryable error — try next model
             if _should_retry(response.status_code) and attempt < len(models_to_try) - 1:
                 wait = _get_wait_time(response, attempt)
                 next_model = models_to_try[attempt + 1]
-                short_current = current_model.replace('groq::', '').split('/')[-1]
                 short_next = next_model.replace('groq::', '').split('/')[-1]
-                print(f"⏳ {short_current} failed ({response.status_code}). Switching to {short_next}...")
+                print(f"⏳ {short_name} failed ({response.status_code}). Switching to {short_next}...")
                 if wait and response.status_code == 429:
                     time.sleep(wait)
                 continue
 
-            # Non-retryable error
-            error_detail = response.text[:300]
-            last_error = f"API error (HTTP {response.status_code}): {error_detail}"
-
         except httpx.TimeoutException:
-            last_error = "Request timed out"
+            short_name = current_model.replace('groq::', '').split('/')[-1]
+            error_trail.append(f"{short_name}→timeout")
             if attempt < len(models_to_try) - 1:
                 time.sleep(2)
                 continue
@@ -244,7 +244,8 @@ def chat_completion(
         except httpx.ConnectError:
             raise Exception("❌ Cannot connect to API. Check your internet connection.")
 
-    raise Exception(f"❌ All models failed. Last error: {last_error}")
+    trail_str = " | ".join(error_trail) if error_trail else "unknown"
+    raise Exception(f"❌ All models failed: {trail_str}. Please try again in 30 seconds.")
 
 
 # ============================================
@@ -269,7 +270,7 @@ def stream_chat_completion(
     # Build fallback list
     models_to_try = [model] + [m for m in FREE_MODEL_FALLBACKS if m != model]
 
-    last_error = None
+    error_trail = []
     for attempt, current_model in enumerate(models_to_try):
         try:
             api_url, headers, actual_model = _get_api_config(current_model)
@@ -288,30 +289,32 @@ def stream_chat_completion(
 
             with httpx.Client(timeout=120.0) as client:
                 with client.stream("POST", api_url, headers=headers, json=payload) as response:
-                    # Retryable error — try next model
-                    if _should_retry(response.status_code) and attempt < len(models_to_try) - 1:
-                        wait = 0
-                        if response.status_code == 429:
-                            try:
-                                body = "".join(chunk for chunk in response.iter_text())
-                                err_data = json.loads(body)
-                                wait = min(int(err_data.get("error", {}).get("metadata", {}).get("retry_after_seconds", 3)), 5)
-                            except Exception:
-                                wait = 3
-                        next_model = models_to_try[attempt + 1]
-                        short_current = current_model.replace('groq::', '').split('/')[-1]
-                        short_next = next_model.replace('groq::', '').split('/')[-1]
-                        print(f"⏳ {short_current} failed ({response.status_code}). Switching to {short_next}...")
-                        if wait:
-                            time.sleep(wait)
-                        continue
-
-                    # Non-retryable error on last attempt
+                    # Retryable error — log and try next model
                     if response.status_code != 200:
-                        body = "".join(chunk for chunk in response.iter_text())
+                        short_name = current_model.replace('groq::', '').split('/')[-1]
+                        error_trail.append(f"{short_name}→{response.status_code}")
+
+                        if _should_retry(response.status_code) and attempt < len(models_to_try) - 1:
+                            wait = 0
+                            if response.status_code == 429:
+                                try:
+                                    body = "".join(chunk for chunk in response.iter_text())
+                                    err_data = json.loads(body)
+                                    wait = min(int(err_data.get("error", {}).get("metadata", {}).get("retry_after_seconds", 3)), 5)
+                                except Exception:
+                                    wait = 3
+                            next_model = models_to_try[attempt + 1]
+                            short_next = next_model.replace('groq::', '').split('/')[-1]
+                            print(f"⏳ {short_name} failed ({response.status_code}). Switching to {short_next}...")
+                            if wait:
+                                time.sleep(wait)
+                            continue
+
+                        # Last model also failed
                         if attempt < len(models_to_try) - 1:
-                            continue  # Try next model
-                        raise Exception(f"API error (HTTP {response.status_code}): {body[:300]}")
+                            continue
+                        trail_str = " | ".join(error_trail)
+                        raise Exception(f"❌ All models failed: {trail_str}")
 
                     # Parse SSE (Server-Sent Events) stream
                     for line in response.iter_lines():
@@ -334,7 +337,8 @@ def stream_chat_completion(
                     return  # Success
 
         except httpx.TimeoutException:
-            last_error = "Stream timed out"
+            short_name = current_model.replace('groq::', '').split('/')[-1]
+            error_trail.append(f"{short_name}→timeout")
             if attempt < len(models_to_try) - 1:
                 time.sleep(2)
                 continue
@@ -342,4 +346,5 @@ def stream_chat_completion(
         except httpx.ConnectError:
             raise Exception("❌ Cannot connect to API. Check your internet connection.")
 
-    raise Exception(f"❌ All models failed. Last error: {last_error}")
+    trail_str = " | ".join(error_trail) if error_trail else "unknown"
+    raise Exception(f"❌ All models failed: {trail_str}. Please try again in 30 seconds.")
