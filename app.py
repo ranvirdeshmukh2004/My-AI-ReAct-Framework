@@ -342,9 +342,9 @@ def init_session_state():
         st.session_state.messages = []
     if "vector_provider" not in st.session_state:
         st.session_state.vector_provider = "pinecone"
-    if "agent" not in st.session_state:
+    if "agent" not in st.session_state or not hasattr(st.session_state.agent, "run_stream"):
         from agent.react_agent import ReactAgent
-        st.session_state.agent = ReactAgent(vector_provider=st.session_state.vector_provider)
+        st.session_state.agent = ReactAgent(vector_provider=st.session_state.get("vector_provider", "pinecone"))
     if "session_id" not in st.session_state:
         from agent.memory import ConversationMemory
         st.session_state.session_id = ConversationMemory.new_session_id()
@@ -362,6 +362,8 @@ def init_session_state():
         st.session_state.selected_auditor_model = "google/gemma-4-31b-it:free"
     if "validator_enabled" not in st.session_state:
         st.session_state.validator_enabled = True
+    if "streaming_enabled" not in st.session_state:
+        st.session_state.streaming_enabled = True
     # Restore indexed_docs tracker into the doc_store (survives Streamlit reruns)
     if st.session_state.indexed_docs and hasattr(st.session_state.agent, 'doc_store'):
         try:
@@ -964,6 +966,9 @@ with st.sidebar:
                                                     help="Independent verification via multi-model consensus, math checks & source validation")
     st.session_state.agent.validator_enabled = st.session_state.validator_enabled
 
+    st.session_state.streaming_enabled = st.toggle("🌊 Stream Response", value=st.session_state.streaming_enabled,
+                                                    help="Show live progress & typing effect (like ChatGPT). Disable for instant full response.")
+
 # ============================================
 # Header
 # ============================================
@@ -1153,88 +1158,121 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
             # Always skip cache on regeneration
             _force_skip = True if _regen else (not st.session_state.cache_enabled)
 
-            # --- Live streaming status panel ---
-            status = st.status("⚡ Starting...", expanded=True)
-            answer_container = st.empty()
-
             full_answer = ""
             result = None
             audit_data = None
             validation_data = None
             final_sources = []
-            _step_count = 0
 
-            for event in st.session_state.agent.run_stream(
-                user_input=prompt,
-                session_id=st.session_state.session_id,
-                skip_cache=_force_skip,
-                model=st.session_state.selected_model,
-                auditor_model=st.session_state.selected_auditor_model,
-            ):
-                if event.type == "thinking":
-                    _iter = event.data.get("iteration", "")
-                    _status_msg = event.data.get("status", "")
-                    if _status_msg:
-                        status.update(label=f"⏳ {_status_msg}", state="running")
-                    elif _iter:
-                        _step_count = _iter
-                        status.update(label=f"🤔 Thinking... (step {_iter})", state="running")
+            if st.session_state.streaming_enabled:
+                # ==========================================
+                # STREAMING MODE — live progress + typing
+                # ==========================================
+                status = st.status("⚡ Starting...", expanded=True)
+                answer_container = st.empty()
+                _step_count = 0
 
-                elif event.type == "tool_call":
-                    tool_name = event.data.get("tool", "?")
-                    tool_input = event.data.get("input", "")
-                    thought = event.data.get("thought", "")
-                    status.update(label=f"🔧 Using {tool_name}...", state="running")
-                    if thought:
-                        status.write(f"💭 *{thought[:150]}*")
-                    status.write(f"**Tool**: `{tool_name}`")
-                    if tool_input:
-                        status.write(f"**Input**: {tool_input[:200]}")
+                for event in st.session_state.agent.run_stream(
+                    user_input=prompt,
+                    session_id=st.session_state.session_id,
+                    skip_cache=_force_skip,
+                    model=st.session_state.selected_model,
+                    auditor_model=st.session_state.selected_auditor_model,
+                ):
+                    if event.type == "thinking":
+                        _iter = event.data.get("iteration", "")
+                        _status_msg = event.data.get("status", "")
+                        if _status_msg:
+                            status.update(label=f"⏳ {_status_msg}", state="running")
+                        elif _iter:
+                            _step_count = _iter
+                            status.update(label=f"🤔 Thinking... (step {_iter})", state="running")
 
-                elif event.type == "tool_result":
-                    tool_name = event.data.get("tool", "?")
-                    output = event.data.get("output", "")
-                    cached = event.data.get("cached", False)
-                    cache_tag = " ⚡ (cached)" if cached else ""
-                    status.write(f"**Result{cache_tag}**: {output[:150]}...")
-                    status.write("---")
+                    elif event.type == "tool_call":
+                        tool_name = event.data.get("tool", "?")
+                        tool_input = event.data.get("input", "")
+                        thought = event.data.get("thought", "")
+                        status.update(label=f"🔧 Using {tool_name}...", state="running")
+                        if thought:
+                            status.write(f"💭 *{thought[:150]}*")
+                        status.write(f"**Tool**: `{tool_name}`")
+                        if tool_input:
+                            status.write(f"**Input**: {tool_input[:200]}")
 
-                elif event.type == "answer_start":
-                    thought = event.data.get("thought", "")
-                    label = f"✅ Done reasoning ({_step_count} steps)" if _step_count else "✅ Done reasoning"
-                    status.update(label=label, state="complete", expanded=False)
-                    if thought:
-                        status.write(f"💭 *{thought[:200]}*")
+                    elif event.type == "tool_result":
+                        output = event.data.get("output", "")
+                        cached = event.data.get("cached", False)
+                        cache_tag = " ⚡ (cached)" if cached else ""
+                        status.write(f"**Result{cache_tag}**: {output[:150]}...")
+                        status.write("---")
 
-                elif event.type == "answer_token":
-                    full_answer += event.data.get("token", "")
-                    answer_container.markdown(full_answer + "▌")
+                    elif event.type == "answer_start":
+                        thought = event.data.get("thought", "")
+                        label = f"✅ Done reasoning ({_step_count} steps)" if _step_count else "✅ Done reasoning"
+                        status.update(label=label, state="complete", expanded=False)
+                        if thought:
+                            status.write(f"💭 *{thought[:200]}*")
 
-                elif event.type == "answer_done":
-                    full_answer = event.data.get("answer", full_answer)
-                    if event.data.get("cached"):
-                        answer_container.markdown(f'<span class="cached-chip" style="margin-bottom:0.5rem;display:inline-flex;">⚡ Served from cache</span>\n\n{full_answer}', unsafe_allow_html=True)
+                    elif event.type == "answer_token":
+                        full_answer += event.data.get("token", "")
+                        answer_container.markdown(full_answer + "▌")
+
+                    elif event.type == "answer_done":
+                        full_answer = event.data.get("answer", full_answer)
+                        if event.data.get("cached"):
+                            answer_container.markdown(f'<span class="cached-chip" style="margin-bottom:0.5rem;display:inline-flex;">⚡ Served from cache</span>\n\n{full_answer}', unsafe_allow_html=True)
+                        else:
+                            answer_container.markdown(full_answer)
+
+                    elif event.type == "audit":
+                        audit_data = event.data.get("data")
+
+                    elif event.type == "validation":
+                        validation_data = event.data.get("data")
+
+                    elif event.type == "error":
+                        st.error(f"❌ {event.data.get('message', 'Unknown error')}")
+
+                    elif event.type == "done":
+                        result = event.data.get("result", {})
+
+            else:
+                # ==========================================
+                # BLOCKING MODE — classic spinner + instant
+                # ==========================================
+                with st.spinner("⚡ Reasoning..."):
+                    result = st.session_state.agent.run(
+                        user_input=prompt,
+                        session_id=st.session_state.session_id,
+                        skip_cache=_force_skip,
+                        model=st.session_state.selected_model,
+                        auditor_model=st.session_state.selected_auditor_model,
+                    )
+                    full_answer = result["final_answer"]
+                    audit_data = result.get("audit")
+                    validation_data = result.get("validation")
+
+                    if result.get("cached"):
+                        st.markdown('<span class="cached-chip" style="margin-bottom:0.5rem;display:inline-flex;">⚡ Served from cache</span>', unsafe_allow_html=True)
+
+                    # Render answer with inline citations
+                    sources = result.get("sources", [])
+                    cited_html, final_sources = render_citations(full_answer, sources)
+                    if final_sources:
+                        st.markdown(cited_html, unsafe_allow_html=True)
                     else:
-                        answer_container.markdown(full_answer)
+                        st.markdown(cited_html)
 
-                elif event.type == "audit":
-                    audit_data = event.data.get("data")
-
-                elif event.type == "validation":
-                    validation_data = event.data.get("data")
-
-                elif event.type == "error":
-                    st.error(f"❌ {event.data.get('message', 'Unknown error')}")
-
-                elif event.type == "done":
-                    result = event.data.get("result", {})
-
-            # --- Post-stream rendering (metrics, audit, validation) ---
+            # ==========================================
+            # SHARED: Post-render (metrics, audit, etc.)
+            # ==========================================
             if result:
-                sources = result.get("sources", [])
-                cited_html, final_sources = render_citations(full_answer, sources)
-                if final_sources:
-                    answer_container.markdown(cited_html, unsafe_allow_html=True)
+                # For streaming mode, apply citations
+                if st.session_state.streaming_enabled:
+                    sources = result.get("sources", [])
+                    cited_html, final_sources = render_citations(full_answer, sources)
+                    if final_sources:
+                        answer_container.markdown(cited_html, unsafe_allow_html=True)
 
                 if result["steps"]:
                     display_reasoning_trace(result["steps"])
@@ -1314,4 +1352,3 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
             st.error(f"❌ {str(e)}")
 
 st.markdown('<div class="footer">Built with ❤️ — AI Agent • Multi-Model via OpenRouter • PostgreSQL + Pinecone/Weaviate/Qdrant + Redis</div>', unsafe_allow_html=True)
-
