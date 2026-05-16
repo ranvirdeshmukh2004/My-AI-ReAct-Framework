@@ -360,9 +360,9 @@ def init_session_state():
     if "audit_enabled" not in st.session_state:
         st.session_state.audit_enabled = True
     if "selected_model" not in st.session_state:
-        st.session_state.selected_model = "deepseek/deepseek-v4-flash:free"
+        st.session_state.selected_model = "groq::meta-llama/llama-4-scout-17b-16e-instruct"
     if "selected_auditor_model" not in st.session_state:
-        st.session_state.selected_auditor_model = "google/gemma-4-31b-it:free"
+        st.session_state.selected_auditor_model = "groq::meta-llama/llama-4-scout-17b-16e-instruct"
     if "validator_enabled" not in st.session_state:
         st.session_state.validator_enabled = True
     if "streaming_enabled" not in st.session_state:
@@ -386,7 +386,6 @@ TOOL_ICONS = {
 AGENT_MODELS = {
     "⚡ Llama 4 Scout (Groq)": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
     "⚡ Llama 4 Maverick (Groq)": "groq::meta-llama/llama-4-maverick-17b-128e-instruct",
-    "DeepSeek V4 Flash 284B 🆓": "deepseek/deepseek-v4-flash:free",
     "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
     "Llama 3.3 70B 🆓": "meta-llama/llama-3.3-70b-instruct:free",
     "Nemotron 3 Super 120B 🆓": "nvidia/nemotron-3-super-120b-a12b:free",
@@ -395,9 +394,7 @@ AGENT_MODELS = {
 AUDITOR_MODELS = {
     "⚡ Llama 4 Scout (Groq)": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
     "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
-    "DeepSeek V4 Flash 284B 🆓": "deepseek/deepseek-v4-flash:free",
     "Nemotron 3 Nano 30B 🆓": "nvidia/nemotron-3-nano-30b-a3b:free",
-    "GPT-OSS 20B 🆓": "openai/gpt-oss-20b:free",
 }
 
 # ============================================

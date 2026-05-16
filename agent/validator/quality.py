@@ -14,15 +14,17 @@ import re
 from agent.llm import chat_completion
 
 
-# Model rotation map: if agent uses X, evaluator uses Y
+# Model rotation map: evaluator always uses a DIFFERENT model than the agent
+# Uses Groq for reliability (separate rate limits from OpenRouter)
 _MODEL_ROTATION = {
-    "deepseek/deepseek-v4-flash:free": "google/gemma-4-31b-it:free",
-    "google/gemma-4-31b-it:free": "deepseek/deepseek-v4-flash:free",
-    "meta-llama/llama-3.3-70b-instruct:free": "google/gemma-4-31b-it:free",
-    "nvidia/nemotron-3-super-120b-a12b:free": "google/gemma-4-31b-it:free",
-    "openai/gpt-oss-120b:free": "deepseek/deepseek-v4-flash:free",
+    "groq::meta-llama/llama-4-scout-17b-16e-instruct": "groq::meta-llama/llama-4-maverick-17b-128e-instruct",
+    "groq::meta-llama/llama-4-maverick-17b-128e-instruct": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
+    "google/gemma-4-31b-it:free": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-3.3-70b-instruct:free": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
+    "nvidia/nemotron-3-super-120b-a12b:free": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
+    "openai/gpt-oss-120b:free": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
 }
-_DEFAULT_EVAL_MODEL = "google/gemma-4-31b-it:free"
+_DEFAULT_EVAL_MODEL = "groq::meta-llama/llama-4-maverick-17b-128e-instruct"
 
 
 def _pick_eval_model(agent_model: str) -> str:
