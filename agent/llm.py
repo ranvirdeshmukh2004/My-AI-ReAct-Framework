@@ -76,7 +76,7 @@ def _build_fallback_list():
     fallbacks = []
     if GROQ_API_KEY:
         fallbacks.append("groq::meta-llama/llama-4-scout-17b-16e-instruct")
-        fallbacks.append("groq::meta-llama/llama-4-maverick-17b-128e-instruct")
+        fallbacks.append("groq::llama-3.3-70b-versatile")
     if OPENROUTER_API_KEY:
         fallbacks.append("google/gemma-4-31b-it:free")
         fallbacks.append("meta-llama/llama-3.3-70b-instruct:free")
@@ -194,55 +194,60 @@ def chat_completion(
 
     error_trail = []  # Track all failures for diagnostics
     for attempt, current_model in enumerate(models_to_try):
-        try:
-            api_url, headers, actual_model = _get_api_config(current_model)
+        # Groq 429: wait and retry SAME model (per-account limits reset in seconds)
+        groq_retries = 2 if _is_groq_model(current_model) else 0
+        for groq_retry in range(groq_retries + 1):
+            try:
+                api_url, headers, actual_model = _get_api_config(current_model)
 
-            payload = {
-                "model": actual_model,
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-            }
-            if not _is_groq_model(current_model):
-                payload["include_reasoning"] = False
-            if stop:
-                payload["stop"] = stop
+                payload = {
+                    "model": actual_model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                }
+                if not _is_groq_model(current_model):
+                    payload["include_reasoning"] = False
+                if stop:
+                    payload["stop"] = stop
 
-            with httpx.Client(timeout=120.0) as client:
-                response = client.post(api_url, headers=headers, json=payload)
+                with httpx.Client(timeout=120.0) as client:
+                    response = client.post(api_url, headers=headers, json=payload)
 
-            # Success
-            if response.status_code == 200:
-                data = response.json()
-                _last_usage = data.get("usage", {})
-                if "choices" in data and len(data["choices"]) > 0:
-                    return data["choices"][0]["message"]["content"]
-                else:
-                    raise Exception(f"Unexpected API response: {json.dumps(data)[:200]}")
+                # Success
+                if response.status_code == 200:
+                    data = response.json()
+                    _last_usage = data.get("usage", {})
+                    if "choices" in data and len(data["choices"]) > 0:
+                        return data["choices"][0]["message"]["content"]
+                    else:
+                        raise Exception(f"Unexpected API response: {json.dumps(data)[:200]}")
 
-            # Failed — log it
-            short_name = current_model.replace('groq::', '').split('/')[-1]
-            error_trail.append(f"{short_name}→{response.status_code}")
-
-            # Retryable error — try next model
-            if _should_retry(response.status_code) and attempt < len(models_to_try) - 1:
-                wait = _get_wait_time(response, attempt)
-                next_model = models_to_try[attempt + 1]
-                short_next = next_model.replace('groq::', '').split('/')[-1]
-                print(f"⏳ {short_name} failed ({response.status_code}). Switching to {short_next}...")
-                if wait and response.status_code == 429:
+                # Groq 429 — wait and retry same model (limits reset quickly)
+                if _is_groq_model(current_model) and response.status_code == 429 and groq_retry < groq_retries:
+                    wait = _get_wait_time(response, groq_retry)
+                    short_name = current_model.replace('groq::', '').split('/')[-1]
+                    print(f"⏳ Groq {short_name} rate limited. Waiting {wait}s (retry {groq_retry+1}/{groq_retries})...")
                     time.sleep(wait)
-                continue
+                    continue  # Retry same Groq model
 
-        except httpx.TimeoutException:
-            short_name = current_model.replace('groq::', '').split('/')[-1]
-            error_trail.append(f"{short_name}→timeout")
-            if attempt < len(models_to_try) - 1:
-                time.sleep(2)
-                continue
+                # Failed — log and move to next model
+                short_name = current_model.replace('groq::', '').split('/')[-1]
+                error_trail.append(f"{short_name}→{response.status_code}")
 
-        except httpx.ConnectError:
-            raise Exception("❌ Cannot connect to API. Check your internet connection.")
+                if _should_retry(response.status_code) and attempt < len(models_to_try) - 1:
+                    next_model = models_to_try[attempt + 1]
+                    short_next = next_model.replace('groq::', '').split('/')[-1]
+                    print(f"⏳ {short_name} failed ({response.status_code}). Switching to {short_next}...")
+                break  # Exit groq_retry loop, move to next model
+
+            except httpx.TimeoutException:
+                short_name = current_model.replace('groq::', '').split('/')[-1]
+                error_trail.append(f"{short_name}→timeout")
+                break
+
+            except httpx.ConnectError:
+                raise Exception("❌ Cannot connect to API. Check your internet connection.")
 
     trail_str = " | ".join(error_trail) if error_trail else "unknown"
     raise Exception(f"❌ All models failed: {trail_str}. Please try again in 30 seconds.")
@@ -272,79 +277,76 @@ def stream_chat_completion(
 
     error_trail = []
     for attempt, current_model in enumerate(models_to_try):
-        try:
-            api_url, headers, actual_model = _get_api_config(current_model)
+        groq_retries = 2 if _is_groq_model(current_model) else 0
+        for groq_retry in range(groq_retries + 1):
+            try:
+                api_url, headers, actual_model = _get_api_config(current_model)
 
-            payload = {
-                "model": actual_model,
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "stream": True,
-            }
-            if not _is_groq_model(current_model):
-                payload["include_reasoning"] = False
-            if stop:
-                payload["stop"] = stop
+                payload = {
+                    "model": actual_model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "stream": True,
+                }
+                if not _is_groq_model(current_model):
+                    payload["include_reasoning"] = False
+                if stop:
+                    payload["stop"] = stop
 
-            with httpx.Client(timeout=120.0) as client:
-                with client.stream("POST", api_url, headers=headers, json=payload) as response:
-                    # Retryable error — log and try next model
-                    if response.status_code != 200:
-                        short_name = current_model.replace('groq::', '').split('/')[-1]
-                        error_trail.append(f"{short_name}→{response.status_code}")
-
-                        if _should_retry(response.status_code) and attempt < len(models_to_try) - 1:
-                            wait = 0
-                            if response.status_code == 429:
+                with httpx.Client(timeout=120.0) as client:
+                    with client.stream("POST", api_url, headers=headers, json=payload) as response:
+                        if response.status_code != 200:
+                            # Groq 429 — wait and retry same model
+                            if _is_groq_model(current_model) and response.status_code == 429 and groq_retry < groq_retries:
+                                short_name = current_model.replace('groq::', '').split('/')[-1]
+                                wait = 5
                                 try:
                                     body = "".join(chunk for chunk in response.iter_text())
                                     err_data = json.loads(body)
-                                    wait = min(int(err_data.get("error", {}).get("metadata", {}).get("retry_after_seconds", 3)), 5)
+                                    wait = min(int(err_data.get("error", {}).get("metadata", {}).get("retry_after_seconds", 5)), 10)
                                 except Exception:
-                                    wait = 3
-                            next_model = models_to_try[attempt + 1]
-                            short_next = next_model.replace('groq::', '').split('/')[-1]
-                            print(f"⏳ {short_name} failed ({response.status_code}). Switching to {short_next}...")
-                            if wait:
+                                    pass
+                                print(f"⏳ Groq {short_name} rate limited. Waiting {wait}s (retry {groq_retry+1}/{groq_retries})...")
                                 time.sleep(wait)
-                            continue
+                                continue  # Retry same Groq model
 
-                        # Last model also failed
-                        if attempt < len(models_to_try) - 1:
-                            continue
-                        trail_str = " | ".join(error_trail)
-                        raise Exception(f"❌ All models failed: {trail_str}")
+                            short_name = current_model.replace('groq::', '').split('/')[-1]
+                            error_trail.append(f"{short_name}→{response.status_code}")
 
-                    # Parse SSE (Server-Sent Events) stream
-                    for line in response.iter_lines():
-                        if line.startswith("data: "):
-                            data_str = line[6:]
+                            if _should_retry(response.status_code) and attempt < len(models_to_try) - 1:
+                                next_model = models_to_try[attempt + 1]
+                                short_next = next_model.replace('groq::', '').split('/')[-1]
+                                print(f"⏳ {short_name} failed ({response.status_code}). Switching to {short_next}...")
+                            break  # Exit groq_retry loop
 
-                            if data_str.strip() == "[DONE]":
-                                return
+                        # Parse SSE (Server-Sent Events) stream
+                        for line in response.iter_lines():
+                            if line.startswith("data: "):
+                                data_str = line[6:]
 
-                            try:
-                                data = json.loads(data_str)
-                                if "usage" in data:
-                                    _last_usage = data["usage"]
-                                delta = data["choices"][0].get("delta", {})
-                                content = delta.get("content", "")
-                                if content:
-                                    yield content
-                            except (json.JSONDecodeError, KeyError, IndexError):
-                                continue
-                    return  # Success
+                                if data_str.strip() == "[DONE]":
+                                    return
 
-        except httpx.TimeoutException:
-            short_name = current_model.replace('groq::', '').split('/')[-1]
-            error_trail.append(f"{short_name}→timeout")
-            if attempt < len(models_to_try) - 1:
-                time.sleep(2)
-                continue
+                                try:
+                                    data = json.loads(data_str)
+                                    if "usage" in data:
+                                        _last_usage = data["usage"]
+                                    delta = data["choices"][0].get("delta", {})
+                                    content = delta.get("content", "")
+                                    if content:
+                                        yield content
+                                except (json.JSONDecodeError, KeyError, IndexError):
+                                    continue
+                        return  # Success
 
-        except httpx.ConnectError:
-            raise Exception("❌ Cannot connect to API. Check your internet connection.")
+            except httpx.TimeoutException:
+                short_name = current_model.replace('groq::', '').split('/')[-1]
+                error_trail.append(f"{short_name}→timeout")
+                break
+
+            except httpx.ConnectError:
+                raise Exception("❌ Cannot connect to API. Check your internet connection.")
 
     trail_str = " | ".join(error_trail) if error_trail else "unknown"
     raise Exception(f"❌ All models failed: {trail_str}. Please try again in 30 seconds.")

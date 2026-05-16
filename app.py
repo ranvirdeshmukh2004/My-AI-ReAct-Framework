@@ -385,7 +385,7 @@ TOOL_ICONS = {
 # Available models for dropdowns
 AGENT_MODELS = {
     "⚡ Llama 4 Scout (Groq)": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
-    "⚡ Llama 4 Maverick (Groq)": "groq::meta-llama/llama-4-maverick-17b-128e-instruct",
+    "⚡ Llama 3.3 70B (Groq)": "groq::llama-3.3-70b-versatile",
     "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
     "Llama 3.3 70B 🆓": "meta-llama/llama-3.3-70b-instruct:free",
     "Nemotron 3 Super 120B 🆓": "nvidia/nemotron-3-super-120b-a12b:free",

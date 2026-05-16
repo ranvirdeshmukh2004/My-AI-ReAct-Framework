@@ -17,14 +17,14 @@ from agent.llm import chat_completion
 # Model rotation map: evaluator always uses a DIFFERENT model than the agent
 # Uses Groq for reliability (separate rate limits from OpenRouter)
 _MODEL_ROTATION = {
-    "groq::meta-llama/llama-4-scout-17b-16e-instruct": "groq::meta-llama/llama-4-maverick-17b-128e-instruct",
-    "groq::meta-llama/llama-4-maverick-17b-128e-instruct": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
+    "groq::meta-llama/llama-4-scout-17b-16e-instruct": "groq::llama-3.3-70b-versatile",
+    "groq::llama-3.3-70b-versatile": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
     "google/gemma-4-31b-it:free": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
     "meta-llama/llama-3.3-70b-instruct:free": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
     "nvidia/nemotron-3-super-120b-a12b:free": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
     "openai/gpt-oss-120b:free": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
 }
-_DEFAULT_EVAL_MODEL = "groq::meta-llama/llama-4-maverick-17b-128e-instruct"
+_DEFAULT_EVAL_MODEL = "groq::llama-3.3-70b-versatile"
 
 
 def _pick_eval_model(agent_model: str) -> str:
