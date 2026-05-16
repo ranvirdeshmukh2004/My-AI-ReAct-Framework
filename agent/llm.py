@@ -66,14 +66,10 @@ OPENROUTER_API_KEY = _get_secret("OPENROUTER_API_KEY", "")
 DEFAULT_MODEL = _get_secret("DEFAULT_MODEL", "deepseek/deepseek-v4-flash:free")
 
 # Fallback models to try when the primary model is rate-limited (429)
-# Order: most capable → broadest availability → auto-router (last resort)
 FREE_MODEL_FALLBACKS = [
     "deepseek/deepseek-v4-flash:free",
     "google/gemma-4-31b-it:free",
     "meta-llama/llama-3.3-70b-instruct:free",
-    "qwen/qwen3-235b-a22b:free",
-    "nvidia/llama-3.1-nemotron-ultra-253b-v1:free",
-    "openrouter/auto",  # Last resort — OpenRouter picks the best available
 ]
 
 
@@ -148,20 +144,23 @@ def chat_completion(
                     json=payload,
                 )
 
-            # Handle rate limiting (429) — switch to next model immediately
-            if response.status_code == 429:
+            # Handle rate limiting (429) or model not found (404) — skip to next model
+            if response.status_code in (429, 404):
                 if attempt < max_retries - 1:
                     import time as _time
-                    try:
-                        err_data = response.json()
-                        wait = err_data.get("error", {}).get("metadata", {}).get("retry_after_seconds", None)
-                    except Exception:
-                        wait = None
-                    # Short wait (max 5s), then switch model
-                    wait = min(int(wait or 3), 5)
+                    wait = 3
+                    if response.status_code == 429:
+                        try:
+                            err_data = response.json()
+                            wait = min(int(err_data.get("error", {}).get("metadata", {}).get("retry_after_seconds", 3)), 5)
+                        except Exception:
+                            pass
+                    else:
+                        wait = 0  # 404 = model doesn't exist, skip immediately
                     next_model = models_to_try[attempt + 1] if attempt + 1 < len(models_to_try) else "?"
-                    print(f"⏳ {current_model.split('/')[-1]} rate limited. Switching to {next_model.split('/')[-1]} in {wait}s...")
-                    _time.sleep(wait)
+                    print(f"⏳ {current_model.split('/')[-1]} {'rate limited' if response.status_code == 429 else 'not found'}. Trying {next_model.split('/')[-1]}...")
+                    if wait:
+                        _time.sleep(wait)
                     continue
                 else:
                     raise Exception(
@@ -261,23 +260,27 @@ def stream_chat_completion(
                 headers=get_headers(),
                 json=payload,
             ) as response:
-                # Handle rate limiting (429) — switch to next model
-                if response.status_code == 429:
+                # Handle rate limiting (429) or model not found (404) — skip to next
+                if response.status_code in (429, 404):
                     if attempt < max_retries - 1:
                         import time as _time
-                        error_body = ""
-                        try:
-                            for chunk in response.iter_text():
-                                error_body += chunk
-                            import json as _json
-                            err_data = _json.loads(error_body)
-                            wait = err_data.get("error", {}).get("metadata", {}).get("retry_after_seconds", None)
-                        except Exception:
-                            wait = None
-                        wait = min(int(wait or 3), 5)
+                        wait = 3
+                        if response.status_code == 429:
+                            try:
+                                error_body = ""
+                                for chunk in response.iter_text():
+                                    error_body += chunk
+                                import json as _json
+                                err_data = _json.loads(error_body)
+                                wait = min(int(err_data.get("error", {}).get("metadata", {}).get("retry_after_seconds", 3)), 5)
+                            except Exception:
+                                pass
+                        else:
+                            wait = 0
                         next_model = models_to_try[attempt + 1] if attempt + 1 < len(models_to_try) else "?"
-                        print(f"⏳ {current_model.split('/')[-1]} rate limited. Switching to {next_model.split('/')[-1]} in {wait}s...")
-                        _time.sleep(wait)
+                        print(f"⏳ {current_model.split('/')[-1]} {'rate limited' if response.status_code == 429 else 'not found'}. Trying {next_model.split('/')[-1]}...")
+                        if wait:
+                            _time.sleep(wait)
                         continue  # Retry
                     else:
                         raise Exception(
