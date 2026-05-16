@@ -66,10 +66,14 @@ OPENROUTER_API_KEY = _get_secret("OPENROUTER_API_KEY", "")
 DEFAULT_MODEL = _get_secret("DEFAULT_MODEL", "deepseek/deepseek-v4-flash:free")
 
 # Fallback models to try when the primary model is rate-limited (429)
+# Order: most capable → broadest availability → auto-router (last resort)
 FREE_MODEL_FALLBACKS = [
     "deepseek/deepseek-v4-flash:free",
     "google/gemma-4-31b-it:free",
     "meta-llama/llama-3.3-70b-instruct:free",
+    "qwen/qwen3-235b-a22b:free",
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1:free",
+    "openrouter/auto",  # Last resort — OpenRouter picks the best available
 ]
 
 
@@ -128,11 +132,13 @@ def chat_completion(
     if stop:
         payload["stop"] = stop
 
-    # Retry logic — try up to 4 times with rate-limit awareness
-    max_retries = 4
+    # Retry logic — cycle through fallback models on 429
+    models_to_try = [model] + [m for m in FREE_MODEL_FALLBACKS if m != model]
+    max_retries = len(models_to_try)
     current_model = model
     for attempt in range(max_retries):
         try:
+            current_model = models_to_try[attempt]
             payload["model"] = current_model
             # Make the API call with a generous timeout
             with httpx.Client(timeout=120.0) as client:
@@ -142,7 +148,7 @@ def chat_completion(
                     json=payload,
                 )
 
-            # Handle rate limiting (429) — wait and retry, or switch model
+            # Handle rate limiting (429) — switch to next model immediately
             if response.status_code == 429:
                 if attempt < max_retries - 1:
                     import time as _time
@@ -151,22 +157,15 @@ def chat_completion(
                         wait = err_data.get("error", {}).get("metadata", {}).get("retry_after_seconds", None)
                     except Exception:
                         wait = None
-                    wait = int(wait or (2 ** (attempt + 1)))
-                    # After 2 failed retries on same model, switch to a fallback
-                    if attempt >= 1:
-                        fallbacks = [m for m in FREE_MODEL_FALLBACKS if m != current_model]
-                        if fallbacks:
-                            current_model = fallbacks[attempt % len(fallbacks)]
-                            print(f"⏳ Rate limited. Switching to {current_model} and retrying in {wait}s...")
-                        else:
-                            print(f"⏳ Rate limited (429). Retrying in {wait}s...")
-                    else:
-                        print(f"⏳ Rate limited (429). Retrying in {wait}s... (attempt {attempt + 1}/{max_retries})")
+                    # Short wait (max 5s), then switch model
+                    wait = min(int(wait or 3), 5)
+                    next_model = models_to_try[attempt + 1] if attempt + 1 < len(models_to_try) else "?"
+                    print(f"⏳ {current_model.split('/')[-1]} rate limited. Switching to {next_model.split('/')[-1]} in {wait}s...")
                     _time.sleep(wait)
                     continue
                 else:
                     raise Exception(
-                        "❌ Rate limited after multiple retries. Free-tier models are busy — please wait a moment and try again."
+                        "❌ All models are rate limited. Free-tier is very busy — please wait 30 seconds and try again."
                     )
 
             # Check for other HTTP errors
@@ -249,10 +248,11 @@ def stream_chat_completion(
     if stop:
         payload["stop"] = stop
 
-    # Retry loop for rate limiting
-    max_retries = 4
-    current_model = model
+    # Retry loop — cycle through fallback models on 429
+    models_to_try = [model] + [m for m in FREE_MODEL_FALLBACKS if m != model]
+    max_retries = len(models_to_try)
     for attempt in range(max_retries):
+        current_model = models_to_try[attempt]
         payload["model"] = current_model
         with httpx.Client(timeout=120.0) as client:
             with client.stream(
@@ -261,7 +261,7 @@ def stream_chat_completion(
                 headers=get_headers(),
                 json=payload,
             ) as response:
-                # Handle rate limiting (429)
+                # Handle rate limiting (429) — switch to next model
                 if response.status_code == 429:
                     if attempt < max_retries - 1:
                         import time as _time
@@ -274,20 +274,14 @@ def stream_chat_completion(
                             wait = err_data.get("error", {}).get("metadata", {}).get("retry_after_seconds", None)
                         except Exception:
                             wait = None
-                        wait = int(wait or (2 ** (attempt + 1)))
-                        # After 2 failed retries, switch model
-                        if attempt >= 1:
-                            fallbacks = [m for m in FREE_MODEL_FALLBACKS if m != current_model]
-                            if fallbacks:
-                                current_model = fallbacks[attempt % len(fallbacks)]
-                                print(f"⏳ Stream rate limited. Switching to {current_model} in {wait}s...")
-                        else:
-                            print(f"⏳ Stream rate limited (429). Retrying in {wait}s...")
+                        wait = min(int(wait or 3), 5)
+                        next_model = models_to_try[attempt + 1] if attempt + 1 < len(models_to_try) else "?"
+                        print(f"⏳ {current_model.split('/')[-1]} rate limited. Switching to {next_model.split('/')[-1]} in {wait}s...")
                         _time.sleep(wait)
                         continue  # Retry
                     else:
                         raise Exception(
-                            "❌ Rate limited after multiple retries. Free-tier models are busy — please wait a moment and try again."
+                            "❌ All models are rate limited. Free-tier is very busy — please wait 30 seconds and try again."
                         )
 
                 if response.status_code != 200:
