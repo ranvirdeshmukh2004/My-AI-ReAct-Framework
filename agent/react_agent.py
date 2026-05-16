@@ -13,7 +13,11 @@ The brain of the AI agent. Implements the ReAct
 
 import os
 import time
-from agent.llm import chat_completion, get_last_usage, reset_usage_accumulator, accumulate_usage
+from agent.llm import (
+    chat_completion, stream_chat_completion,
+    get_last_usage, reset_usage_accumulator, accumulate_usage,
+)
+from agent.events import AgentEvent
 from agent.parser import (
     parse_llm_output,
     format_tool_descriptions,
@@ -432,6 +436,248 @@ class ReactAgent:
             "audit": audit_report.to_dict() if audit_report else None,
             "validation": validation_report.to_dict() if validation_report else None,
         }
+
+    def run_stream(self, user_input: str, session_id: str = None, skip_cache: bool = False,
+                   model: str = None, auditor_model: str = None):
+        """
+        Streaming version of run() — yields AgentEvents in real-time.
+
+        Same logic as run(), but instead of returning a dict at the end,
+        it yields events as each step happens. The UI consumes these
+        events to show live progress.
+
+        Yields:
+            AgentEvent instances with types:
+            - thinking, tool_call, tool_result, answer_start,
+              answer_token, answer_done, audit, validation, done
+        """
+        run_start = time.time()
+
+        if session_id is None:
+            session_id = self.memory.new_session_id()
+
+        self.memory.add_message(session_id, "user", user_input)
+
+        # --- Check LLM cache first ---
+        cached_answer = None if skip_cache else self.cache.get("llm", user_input)
+        if cached_answer:
+            self.memory.add_message(session_id, "assistant", cached_answer)
+            yield AgentEvent("answer_done", {
+                "answer": cached_answer,
+                "cached": True,
+            })
+            yield AgentEvent("done", {"result": {
+                "final_answer": cached_answer,
+                "steps": [{"type": "final_answer", "thought": "Retrieved from cache",
+                           "final_answer": cached_answer, "iteration": 0, "cached": True}],
+                "session_id": session_id,
+                "cached": True,
+                "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "llm_calls": 0},
+                "timing": {"total_ms": round((time.time() - run_start) * 1000, 1), "llm_ms": 0, "vector_search_ms": 0},
+                "vector_provider": self.doc_store.provider_name,
+                "sources": [],
+            }})
+            return
+
+        # Build the full prompt
+        system_prompt = self._build_system_prompt()
+        history_text = self._format_history(session_id)
+        full_system_prompt = system_prompt.replace("{history}", history_text).replace("{input}", user_input)
+
+        steps = []
+        token_usage = reset_usage_accumulator()
+        llm_time_ms = 0
+        vector_search_ms = 0
+        all_sources = []
+        _react_stop = ["Observation:", "\nObservation"]
+        messages = [
+            {"role": "system", "content": full_system_prompt},
+            {"role": "user", "content": f"Answer the following query. Start with 'Thought:' and output ONE action at a time. STOP after 'Action Input:' — do NOT write 'Observation:'.\n\nUser query: {user_input}"},
+        ]
+
+        # ============================================
+        # Streaming ReAct Loop
+        # ============================================
+        final_answer = None
+
+        for iteration in range(self.max_iterations):
+            yield AgentEvent("thinking", {"iteration": iteration + 1}, iteration)
+
+            # Stream the LLM response, collecting full text
+            t_llm = time.time()
+            llm_chunks = []
+            try:
+                for chunk in stream_chat_completion(
+                    messages,
+                    model=model or chat_completion.__defaults__[0] if not model else model,
+                    stop=_react_stop,
+                ):
+                    llm_chunks.append(chunk)
+            except Exception as e:
+                # Fallback to non-streaming if stream fails
+                try:
+                    fallback = chat_completion(messages, model=model, stop=_react_stop) if model else chat_completion(messages, stop=_react_stop)
+                    llm_chunks = [fallback]
+                except Exception as e2:
+                    yield AgentEvent("error", {"message": str(e2)}, iteration)
+                    return
+
+            llm_response = "".join(llm_chunks)
+            llm_time_ms += (time.time() - t_llm) * 1000
+            accumulate_usage(token_usage, get_last_usage())
+
+            parsed = parse_llm_output(llm_response)
+
+            if isinstance(parsed, AgentFinish):
+                step = {
+                    "type": "final_answer",
+                    "thought": parsed.thought,
+                    "final_answer": parsed.final_answer,
+                    "iteration": iteration + 1,
+                    "cached": False,
+                }
+                steps.append(step)
+                final_answer = parsed.final_answer
+
+                self.cache.set("llm", user_input, parsed.final_answer)
+                self.memory.add_message(session_id, "assistant", parsed.final_answer)
+
+                # Stream the final answer token-by-token for typing effect
+                yield AgentEvent("answer_start", {"thought": parsed.thought}, iteration)
+                words = parsed.final_answer.split(" ")
+                for i, word in enumerate(words):
+                    token = word if i == len(words) - 1 else word + " "
+                    yield AgentEvent("answer_token", {"token": token}, iteration)
+                yield AgentEvent("answer_done", {"answer": parsed.final_answer}, iteration)
+                break
+
+            elif isinstance(parsed, AgentAction):
+                yield AgentEvent("tool_call", {
+                    "tool": parsed.action,
+                    "input": parsed.action_input,
+                    "thought": parsed.thought,
+                }, iteration)
+
+                step = {
+                    "type": "tool_use",
+                    "thought": parsed.thought,
+                    "action": parsed.action,
+                    "action_input": parsed.action_input,
+                    "iteration": iteration + 1,
+                    "cached": False,
+                }
+
+                # Execute tool
+                tool_cached = self.cache.get(parsed.action, parsed.action_input)
+                if tool_cached and not skip_cache:
+                    observation = tool_cached
+                    step["cached"] = True
+                else:
+                    observation = self.tool_registry.execute(parsed.action, parsed.action_input)
+                    if parsed.action == "doc_search":
+                        from tools.rag_search_tool import get_last_search_time_ms
+                        vector_search_ms += get_last_search_time_ms()
+                    self.cache.set(parsed.action, parsed.action_input, observation)
+
+                step["observation"] = observation
+                steps.append(step)
+
+                yield AgentEvent("tool_result", {
+                    "tool": parsed.action,
+                    "output": observation[:300],
+                    "cached": step["cached"],
+                }, iteration)
+
+                # Extract and accumulate sources
+                new_sources = extract_sources(observation)
+                if new_sources:
+                    offset = len(all_sources)
+                    all_sources.extend(new_sources)
+                    observation = renumber_sources(observation, offset)
+
+                messages.append({"role": "assistant", "content": llm_response})
+                messages.append({"role": "user", "content": f"Observation: {observation}"})
+
+        # ============================================
+        # Max iterations reached (fallback)
+        # ============================================
+        if final_answer is None:
+            fallback_answer = "I've reached my maximum reasoning steps. Based on what I've gathered:\n\n"
+            messages.append({"role": "user", "content": "You've reached the maximum number of steps. Please provide your Final Answer now."})
+            try:
+                t_llm = time.time()
+                final_response = chat_completion(messages, model=model) if model else chat_completion(messages)
+                llm_time_ms += (time.time() - t_llm) * 1000
+                accumulate_usage(token_usage, get_last_usage())
+                final_parsed = parse_llm_output(final_response)
+                if isinstance(final_parsed, AgentFinish):
+                    fallback_answer = final_parsed.final_answer
+                else:
+                    fallback_answer += final_response
+            except Exception:
+                fallback_answer += "Unable to generate a summary."
+
+            final_answer = fallback_answer
+            steps.append({"type": "max_iterations", "thought": "Reached maximum iterations",
+                          "final_answer": fallback_answer, "iteration": self.max_iterations, "cached": False})
+            self.memory.add_message(session_id, "assistant", fallback_answer)
+
+            yield AgentEvent("answer_start", {}, -1)
+            words = fallback_answer.split(" ")
+            for i, word in enumerate(words):
+                token = word if i == len(words) - 1 else word + " "
+                yield AgentEvent("answer_token", {"token": token}, -1)
+            yield AgentEvent("answer_done", {"answer": fallback_answer}, -1)
+
+        # ============================================
+        # Post-processing: Audit + Validation
+        # ============================================
+        _timing = {
+            "total_ms": round((time.time() - run_start) * 1000, 1),
+            "llm_ms": round(llm_time_ms, 1),
+            "vector_search_ms": round(vector_search_ms, 1),
+        }
+
+        audit_report = None
+        if self.audit_enabled:
+            yield AgentEvent("thinking", {"status": "Running audit..."}, -1)
+            try:
+                audit_report = run_full_audit(
+                    query=user_input, answer=final_answer, steps=steps,
+                    sources=all_sources, token_usage=token_usage,
+                    timing=_timing, auditor_model=auditor_model,
+                )
+            except Exception:
+                pass
+        if audit_report:
+            yield AgentEvent("audit", {"data": audit_report.to_dict()}, -1)
+
+        validation_report = None
+        if self.validator_enabled:
+            yield AgentEvent("thinking", {"status": "Running validation..."}, -1)
+            try:
+                validation_report = run_full_validation(
+                    query=user_input, answer=final_answer, steps=steps,
+                    sources=all_sources, agent_model=model or "",
+                )
+            except Exception:
+                pass
+        if validation_report:
+            yield AgentEvent("validation", {"data": validation_report.to_dict()}, -1)
+
+        # Final done event with complete result
+        yield AgentEvent("done", {"result": {
+            "final_answer": final_answer,
+            "steps": steps,
+            "session_id": session_id,
+            "cached": False,
+            "token_usage": token_usage,
+            "timing": _timing,
+            "vector_provider": self.doc_store.provider_name,
+            "sources": all_sources,
+            "audit": audit_report.to_dict() if audit_report else None,
+            "validation": validation_report.to_dict() if validation_report else None,
+        }}, -1)
 
     def get_available_tools(self) -> list[dict]:
         """Get information about all available tools."""

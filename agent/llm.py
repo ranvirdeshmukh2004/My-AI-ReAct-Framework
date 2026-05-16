@@ -177,6 +177,7 @@ def stream_chat_completion(
     model: str = DEFAULT_MODEL,
     temperature: float = 0.3,
     max_tokens: int = 8192,
+    stop: list[str] | None = None,
 ):
     """
     Stream a chat completion response from OpenRouter.
@@ -188,10 +189,13 @@ def stream_chat_completion(
         model: The model ID to use.
         temperature: Controls randomness.
         max_tokens: Maximum tokens in the response.
+        stop: Optional stop sequences.
     
     Yields:
         str: Chunks of the assistant's response.
     """
+    global _last_usage
+
     if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_key_here":
         raise ValueError(
             "🔑 OpenRouter API key not set! "
@@ -204,9 +208,12 @@ def stream_chat_completion(
         "temperature": temperature,
         "max_tokens": max_tokens,
         "stream": True,
+        "include_reasoning": False,
     }
+    if stop:
+        payload["stop"] = stop
 
-    with httpx.Client(timeout=60.0) as client:
+    with httpx.Client(timeout=120.0) as client:
         with client.stream(
             "POST",
             OPENROUTER_API_URL,
@@ -214,7 +221,14 @@ def stream_chat_completion(
             json=payload,
         ) as response:
             if response.status_code != 200:
-                raise Exception(f"OpenRouter API error: {response.status_code}")
+                # Read error body for better diagnostics
+                error_body = ""
+                try:
+                    for chunk in response.iter_text():
+                        error_body += chunk
+                except Exception:
+                    pass
+                raise Exception(f"OpenRouter API error (HTTP {response.status_code}): {error_body}")
 
             # Parse SSE (Server-Sent Events) stream
             for line in response.iter_lines():
@@ -227,6 +241,9 @@ def stream_chat_completion(
 
                     try:
                         data = json.loads(data_str)
+                        # Capture usage if present (usually in last chunk)
+                        if "usage" in data:
+                            _last_usage = data["usage"]
                         # Extract the delta content
                         delta = data["choices"][0].get("delta", {})
                         content = delta.get("content", "")
@@ -234,3 +251,4 @@ def stream_chat_completion(
                             yield content
                     except (json.JSONDecodeError, KeyError, IndexError):
                         continue  # Skip malformed chunks
+

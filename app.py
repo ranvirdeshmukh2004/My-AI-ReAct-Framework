@@ -1138,6 +1138,7 @@ if not st.session_state.messages:
 # Handle regeneration
 _regen = st.session_state.pop("_regen_prompt", None)
 
+
 if prompt := (_regen or st.chat_input("Ask me anything — I can search, calculate, check weather, read pages, and more...")):
     if st.session_state.uploaded_file_path:
         prompt += f"\n\n[Uploaded file available at: {st.session_state.uploaded_file_path}]"
@@ -1148,28 +1149,92 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
         st.markdown(prompt)
 
     with st.chat_message("assistant", avatar="⚡"):
-        with st.spinner("⚡ Reasoning..."):
-            try:
-                # Always skip cache on regeneration
-                _force_skip = True if _regen else (not st.session_state.cache_enabled)
-                result = st.session_state.agent.run(
-                    user_input=prompt,
-                    session_id=st.session_state.session_id,
-                    skip_cache=_force_skip,
-                    model=st.session_state.selected_model,
-                    auditor_model=st.session_state.selected_auditor_model,
-                )
-                # Show cached indicator
-                if result.get("cached"):
-                    st.markdown('<span class="cached-chip" style="margin-bottom:0.5rem;display:inline-flex;">⚡ Served from cache</span>', unsafe_allow_html=True)
+        try:
+            # Always skip cache on regeneration
+            _force_skip = True if _regen else (not st.session_state.cache_enabled)
 
-                # Render answer with inline citations
+            # --- Live streaming status panel ---
+            status = st.status("⚡ Starting...", expanded=True)
+            answer_container = st.empty()
+
+            full_answer = ""
+            result = None
+            audit_data = None
+            validation_data = None
+            final_sources = []
+            _step_count = 0
+
+            for event in st.session_state.agent.run_stream(
+                user_input=prompt,
+                session_id=st.session_state.session_id,
+                skip_cache=_force_skip,
+                model=st.session_state.selected_model,
+                auditor_model=st.session_state.selected_auditor_model,
+            ):
+                if event.type == "thinking":
+                    _iter = event.data.get("iteration", "")
+                    _status_msg = event.data.get("status", "")
+                    if _status_msg:
+                        status.update(label=f"⏳ {_status_msg}", state="running")
+                    elif _iter:
+                        _step_count = _iter
+                        status.update(label=f"🤔 Thinking... (step {_iter})", state="running")
+
+                elif event.type == "tool_call":
+                    tool_name = event.data.get("tool", "?")
+                    tool_input = event.data.get("input", "")
+                    thought = event.data.get("thought", "")
+                    status.update(label=f"🔧 Using {tool_name}...", state="running")
+                    if thought:
+                        status.write(f"💭 *{thought[:150]}*")
+                    status.write(f"**Tool**: `{tool_name}`")
+                    if tool_input:
+                        status.write(f"**Input**: {tool_input[:200]}")
+
+                elif event.type == "tool_result":
+                    tool_name = event.data.get("tool", "?")
+                    output = event.data.get("output", "")
+                    cached = event.data.get("cached", False)
+                    cache_tag = " ⚡ (cached)" if cached else ""
+                    status.write(f"**Result{cache_tag}**: {output[:150]}...")
+                    status.write("---")
+
+                elif event.type == "answer_start":
+                    thought = event.data.get("thought", "")
+                    label = f"✅ Done reasoning ({_step_count} steps)" if _step_count else "✅ Done reasoning"
+                    status.update(label=label, state="complete", expanded=False)
+                    if thought:
+                        status.write(f"💭 *{thought[:200]}*")
+
+                elif event.type == "answer_token":
+                    full_answer += event.data.get("token", "")
+                    answer_container.markdown(full_answer + "▌")
+
+                elif event.type == "answer_done":
+                    full_answer = event.data.get("answer", full_answer)
+                    if event.data.get("cached"):
+                        answer_container.markdown(f'<span class="cached-chip" style="margin-bottom:0.5rem;display:inline-flex;">⚡ Served from cache</span>\n\n{full_answer}', unsafe_allow_html=True)
+                    else:
+                        answer_container.markdown(full_answer)
+
+                elif event.type == "audit":
+                    audit_data = event.data.get("data")
+
+                elif event.type == "validation":
+                    validation_data = event.data.get("data")
+
+                elif event.type == "error":
+                    st.error(f"❌ {event.data.get('message', 'Unknown error')}")
+
+                elif event.type == "done":
+                    result = event.data.get("result", {})
+
+            # --- Post-stream rendering (metrics, audit, validation) ---
+            if result:
                 sources = result.get("sources", [])
-                cited_html, final_sources = render_citations(result["final_answer"], sources)
+                cited_html, final_sources = render_citations(full_answer, sources)
                 if final_sources:
-                    st.markdown(cited_html, unsafe_allow_html=True)
-                else:
-                    st.markdown(cited_html)
+                    answer_container.markdown(cited_html, unsafe_allow_html=True)
 
                 if result["steps"]:
                     display_reasoning_trace(result["steps"])
@@ -1177,7 +1242,7 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                 # Action row: copy | regen | sources pill
                 _new_cols = st.columns([1, 1, 2, 10])
                 with _new_cols[0]:
-                    copy_button(result["final_answer"], f"new_{len(st.session_state.messages)}")
+                    copy_button(full_answer, f"new_{len(st.session_state.messages)}")
                 with _new_cols[1]:
                     if st.button("🔄", key=f"regen_new_{len(st.session_state.messages)}", help="Regenerate"):
                         st.session_state["_regen_prompt"] = prompt
@@ -1218,21 +1283,21 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Audit panel (new response)
-                audit_data = result.get("audit")
+                # Audit panel
+                audit_data = audit_data or result.get("audit")
                 if audit_data:
                     with st.expander("🛡️ Audit Report", expanded=True):
                         st.markdown(render_audit_panel(audit_data), unsafe_allow_html=True)
 
-                # Validation panel (new response)
-                validation_data = result.get("validation")
+                # Validation panel
+                validation_data = validation_data or result.get("validation")
                 if validation_data:
                     with st.expander("✅ Validation Report", expanded=True):
                         st.markdown(render_validation_panel(validation_data), unsafe_allow_html=True)
 
                 st.session_state.messages.append({
                     "role": "assistant",
-                    "content": result["final_answer"],
+                    "content": full_answer,
                     "steps": result["steps"],
                     "token_usage": usage,
                     "timing": timing,
@@ -1242,10 +1307,11 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                     "validation": validation_data,
                     "model": st.session_state.selected_model,
                 })
-            except ValueError as e:
-                st.error(str(e))
-                st.info("💡 Get a free API key at https://openrouter.ai/keys")
-            except Exception as e:
-                st.error(f"❌ {str(e)}")
+        except ValueError as e:
+            st.error(str(e))
+            st.info("💡 Get a free API key at https://openrouter.ai/keys")
+        except Exception as e:
+            st.error(f"❌ {str(e)}")
 
 st.markdown('<div class="footer">Built with ❤️ — AI Agent • Multi-Model via OpenRouter • PostgreSQL + Pinecone/Weaviate/Qdrant + Redis</div>', unsafe_allow_html=True)
+
