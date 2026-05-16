@@ -1349,9 +1349,19 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                     "model": st.session_state.selected_model,
                 })
         except ValueError as e:
+            # Close the status panel if it exists (streaming mode)
+            try:
+                status.update(label="❌ Error", state="error", expanded=False)
+            except Exception:
+                pass
             st.error(str(e))
             st.info("💡 Get a free API key at https://openrouter.ai/keys")
         except Exception as e:
+            # Close the status panel if it exists (streaming mode)
+            try:
+                status.update(label="❌ Error", state="error", expanded=False)
+            except Exception:
+                pass
             st.error(f"❌ {str(e)}")
 
 st.markdown('<div class="footer">Built with ❤️ — AI Agent • Multi-Model via OpenRouter • PostgreSQL + Pinecone/Weaviate/Qdrant + Redis</div>', unsafe_allow_html=True)
