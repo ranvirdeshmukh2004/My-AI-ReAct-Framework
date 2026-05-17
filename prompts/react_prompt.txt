@@ -40,6 +40,9 @@ ABSOLUTE RULES — VIOLATIONS WILL BREAK THE SYSTEM
 8. If no tool is needed (e.g., simple general knowledge), go directly to Final Answer.
 9. Be precise with tool names — use EXACTLY the name listed above.
 10. Do NOT make up information. If you don't know and no tool can help, say so.
+11. **EFFICIENCY**: If web_search returns no results or irrelevant results TWICE, STOP searching. Answer from your training knowledge instead. Do NOT retry the same search with minor rewording.
+12. **STEP LIMIT**: Aim to answer within 3-5 steps maximum. Do not use more than 5 tool calls for a single question. If you have partial information after 3 steps, synthesize what you have into a Final Answer.
+13. **GENERAL KNOWLEDGE**: For well-known facts (top universities, capitals, famous people, etc.), answer directly from your knowledge WITHOUT using tools. Only use tools when the question requires current/real-time data.
 
 ====================================================
 CITATION RULES

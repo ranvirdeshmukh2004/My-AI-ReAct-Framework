@@ -635,7 +635,7 @@ def render_audit_panel(audit_data: dict) -> str:
 
 
 def render_validation_panel(val_data: dict) -> str:
-    """Build HTML for the validation report panel."""
+    """Render validation results as a clean text-based panel (no complex HTML)."""
     if not val_data:
         return ""
 
@@ -647,24 +647,25 @@ def render_validation_panel(val_data: dict) -> str:
     else:
         grade_emoji = "🔴"
 
-    pct = overall * 10
+    # Simple bar using Unicode block characters
+    def make_bar(score, max_score=10):
+        filled = int(score)
+        empty = max_score - filled
+        if score >= 8:
+            return "🟩" * filled + "⬜" * empty
+        elif score >= 6:
+            return "🟨" * filled + "⬜" * empty
+        else:
+            return "🟥" * filled + "⬜" * empty
 
-    html_parts = [f'''
-    <div class="val-section">
-        <div class="val-title">✅ Validation Score</div>
-        <div class="val-overall">{grade_emoji} {overall}/10</div>
-        <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.3rem">
-            <div class="val-bar-bg" style="max-width:200px">
-                <div class="val-bar-fill" style="width:{pct}%"></div>
-            </div>
-        </div>
-    </div>''']
+    lines = []
+    lines.append(f"### {grade_emoji} Validation Score: {overall}/10")
 
-    # --- Quality Breakdown ---
+    # Quality Breakdown
     quality = val_data.get("quality")
     if quality:
-        eval_model = quality.get("evaluator_model", "").split("/")[-1].replace(":free", "")
-        reasoning = _html_mod.escape(quality.get("reasoning", "")[:250])
+        eval_model = quality.get("evaluator_model", "").replace("groq::", "").split("/")[-1].replace(":free", "")
+        reasoning = quality.get("reasoning", "")[:250]
 
         criteria = [
             ("📌 Relevance", quality.get("relevance", 5)),
@@ -674,57 +675,27 @@ def render_validation_panel(val_data: dict) -> str:
             ("💡 Helpfulness", quality.get("helpfulness", 5)),
         ]
 
-        bars_html = ""
+        lines.append(f"\n**📊 Quality Breakdown** — *Evaluated by: {eval_model}*\n")
         for label, score in criteria:
-            bar_pct = score * 10
-            if score >= 8:
-                bar_color = "#4ade80"
-            elif score >= 6:
-                bar_color = "#fbbf24"
-            else:
-                bar_color = "#f87171"
+            bar = make_bar(score)
+            lines.append(f"{label} {bar} **{score}/10**")
 
-            bars_html += f'''
-            <div style="display:flex;align-items:center;gap:0.5rem;margin:0.25rem 0">
-                <span style="min-width:130px;font-size:0.82rem;color:#bbb">{label}</span>
-                <div class="val-bar-bg" style="flex:1;max-width:160px">
-                    <div class="val-bar-fill" style="width:{bar_pct}%;background:{bar_color}"></div>
-                </div>
-                <span style="font-size:0.82rem;color:#eee;min-width:30px;font-weight:600">{score}/10</span>
-            </div>'''
-
-        reasoning_html = ""
         if reasoning:
-            reasoning_html = f'<div class="val-detail" style="margin-top:0.5rem;font-style:italic">💭 "{reasoning}"</div>'
+            lines.append(f"\n> 💭 *{reasoning}*")
 
-        html_parts.append(f'''
-        <div class="val-section">
-            <div class="val-title">📊 Quality Breakdown</div>
-            <div class="val-detail" style="margin-bottom:0.4rem">Evaluated by: {eval_model}</div>
-            {bars_html}
-            {reasoning_html}
-        </div>''')
-
-    # --- Math Bonus Section (only when calculator was used) ---
+    # Math Bonus Section
     math = val_data.get("math")
     if math and not math.get("skipped"):
         m_score = math.get("score", 10)
-        checks_html = ""
+        lines.append(f"\n**🧮 Math Verification ({m_score}/10)**")
+        lines.append(f"{math.get('passed', 0)}/{math.get('total_checks', 0)} calculations verified")
         for c in math.get("checks", []):
             icon = "✅" if c.get("match") else "❌"
-            checks_html += (
-                f'<div class="val-check"><span class="val-check-icon">{icon}</span>'
-                f'<code>{_html_mod.escape(str(c.get("expression", ""))[:60])}</code> = '
-                f'{_html_mod.escape(str(c.get("verified_result", ""))[:30])}</div>'
-            )
-        html_parts.append(f'''
-        <div class="val-section">
-            <div class="val-title">🧮 Math Verification ({m_score}/10)</div>
-            <div class="val-detail">{math.get("passed", 0)}/{math.get("total_checks", 0)} calculations verified</div>
-            {checks_html}
-        </div>''')
+            lines.append(f"{icon} `{str(c.get('expression', ''))[:60]}` = {str(c.get('verified_result', ''))[:30]}")
 
-    return '<div class="val-panel">' + "".join(html_parts) + '</div>'
+    return "\n\n".join(lines)
+
+
 
 
 # ============================================
