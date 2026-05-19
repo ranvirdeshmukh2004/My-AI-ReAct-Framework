@@ -1,9 +1,10 @@
 # ⚡ AI Agent — ReAct Framework
 
-An autonomous AI agent that thinks step-by-step, selects tools dynamically, executes them, observes outputs, and delivers intelligent answers — powered by **Grok** via OpenRouter.
+An autonomous AI agent that thinks step-by-step, selects tools dynamically, executes them, observes outputs, and delivers intelligent answers — powered by **Groq** (primary) and **OpenRouter** (fallback) with built-in quality validation and auditing.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Frontend-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
+![Groq](https://img.shields.io/badge/Groq-LLM-F55036?style=for-the-badge)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-336791?style=for-the-badge&logo=postgresql&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-Cache-DC382D?style=for-the-badge&logo=redis&logoColor=white)
 ![Pinecone](https://img.shields.io/badge/Pinecone-RAG-000000?style=for-the-badge)
@@ -18,10 +19,12 @@ The agent uses the **ReAct (Reason + Act)** framework:
 
 1. **User** sends a question
 2. **Redis cache** is checked first — if the same question was asked before, returns instantly
-3. **Grok LLM** reasons about the question and decides what to do
+3. **LLM** (Groq Llama 4 Scout) reasons about the question and decides what to do
 4. If a **tool** is needed, the agent executes it and reads the result
-5. Steps 3-4 repeat until Grok has enough information
+5. Steps 3-4 repeat until the LLM has enough information (max 6 iterations)
 6. **Final answer** is delivered and saved to **Supabase**
+7. **Validator** grades the response quality using an independent LLM
+8. **Auditor** fact-checks claims and analyzes efficiency
 
 ### Architecture
 
@@ -29,18 +32,57 @@ The agent uses the **ReAct (Reason + Act)** framework:
 graph TD
     A["👤 User Input"] --> B["⚡ Check Redis Cache"]
     B -->|Hit| Z["✅ Return Cached Answer"]
-    B -->|Miss| C["🧠 Think — Grok LLM"]
+    B -->|Miss| C["🧠 Think — Groq LLM"]
     C --> D{"Need a Tool?"}
     D -->|Yes| E["🔧 Execute Tool"]
     E --> F["👁️ Observe Result"]
     F --> G["💾 Cache Tool Result in Redis"]
     G --> C
-    D -->|"Need Document?"| P["📚 Vector DB Search (Pinecone/Weaviate)"]
+    D -->|"Need Document?"| P["📚 Vector DB Search (Pinecone/Weaviate/Qdrant)"]
     P --> F
     D -->|No| H["✅ Final Answer"]
+    H --> V["🔍 Validator — Quality Evaluation"]
+    H --> AU["🛡️ Auditor — Fact Check + Cost Audit"]
     H --> I["💾 Save to Supabase PostgreSQL"]
     H --> J["⚡ Cache Answer in Redis"]
 ```
+
+---
+
+## 🤖 Multi-Provider LLM Architecture
+
+The agent uses a **multi-provider routing** system with intelligent fallbacks:
+
+| Priority | Provider | Model | Rate Limits |
+|----------|----------|-------|-------------|
+| 🥇 Primary | **Groq** | Llama 4 Scout 17B | 30 req/min (per-account) |
+| 🥈 Fallback 1 | **Groq** | Llama 3.3 70B Versatile | 30 req/min (per-account) |
+| 🥉 Fallback 2 | **OpenRouter** | Gemma 4 31B (free) | Shared global limit |
+| 4️⃣ Fallback 3 | **OpenRouter** | Llama 3.3 70B (free) | Shared global limit |
+
+**Smart Retry Logic:**
+- Groq 429 (rate limit) → **waits 5-10s and retries same model** (limits reset quickly)
+- OpenRouter 429 → switches to next model immediately (shared limits don't reset)
+- Handles 404, 401, 403, 500, 502, 503, 529 errors with automatic fallback
+
+---
+
+## 🔍 Validator & Auditor
+
+Every response is independently evaluated by two quality-checking systems:
+
+### Validator (Quality Evaluation)
+- Uses a **different model** than the agent to avoid self-grading bias
+- Scores on **5 criteria** (1-10 each): Relevance, Completeness, Accuracy, Clarity, Helpfulness
+- Weighted formula: `R×0.25 + Co×0.25 + Ac×0.20 + Cl×0.15 + H×0.15`
+- Math re-verification: Re-runs calculator expressions with Python to verify correctness
+- **Cost**: 1 extra LLM call (free tier)
+
+### Auditor (Fact Check + Cost)
+- **Quality Scorer**: Rates accuracy, completeness, relevance, and citation quality
+- **Fact Checker**: Extracts 3-7 claims → labels each as verified, unverified, or hallucinated
+- **Cost Auditor**: Pure Python analysis of tool usage efficiency, duplicate calls, token consumption
+- **Cost**: 1 extra LLM call (quality + fact check combined) + 0 calls (cost audit)
 
 ---
 
@@ -97,34 +139,49 @@ Queries are normalized before hashing — `"What's the weather in Tokyo?"` and `
 
 ```
 My-AI-ReAct-Framework/
-├── app.py                    # ⚡ Streamlit frontend
-├── supabase_setup.sql        # 🗄️ PostgreSQL schema
+├── app.py                        # ⚡ Streamlit frontend
+├── server.py                     # 🌐 FastAPI backend (optional)
+├── supabase_setup.sql            # 🗄️ PostgreSQL schema
 ├── agent/
-│   ├── react_agent.py        # 🧠 Core ReAct reasoning loop
-│   ├── llm.py                # 🤖 OpenRouter API client
-│   ├── parser.py             # 📝 Parse Thought/Action/Final Answer
-│   ├── memory.py             # 💾 Supabase + SQLite memory
-│   ├── cache.py              # ⚡ Redis caching layer
-│   ├── rag.py                # 📚 Multi-provider RAG wrapper
-│   └── vector_stores/        # 🗄️ Vector database providers
-│       ├── __init__.py       # Factory: get_vector_store(provider)
-│       ├── base.py           # Abstract base class
-│       ├── pinecone_store.py # Pinecone implementation
-│       ├── weaviate_store.py # Weaviate implementation
-│       └── qdrant_store.py   # Qdrant implementation
+│   ├── react_agent.py            # 🧠 Core ReAct reasoning loop
+│   ├── llm.py                    # 🤖 Multi-provider LLM client (Groq + OpenRouter)
+│   ├── parser.py                 # 📝 Parse Thought/Action/Final Answer
+│   ├── memory.py                 # 💾 Supabase + SQLite memory
+│   ├── cache.py                  # ⚡ Redis caching layer
+│   ├── rag.py                    # 📚 Multi-provider RAG wrapper
+│   ├── events.py                 # 📡 Streaming event system
+│   ├── auditor/                  # 🛡️ Post-response audit system
+│   │   ├── __init__.py           # Orchestrator (run_full_audit)
+│   │   ├── base.py               # Data models (AuditReport, QualityScore)
+│   │   ├── quality_scorer.py     # LLM-based quality + fact checking
+│   │   └── cost_auditor.py       # Rule-based efficiency analysis
+│   ├── validator/                # 🔍 Independent quality validation
+│   │   ├── __init__.py           # Orchestrator (run_full_validation)
+│   │   ├── base.py               # Data models (ValidationReport)
+│   │   ├── quality.py            # 5-criteria quality evaluation
+│   │   └── math_validator.py     # Calculator re-verification
+│   └── vector_stores/            # 🗄️ Vector database providers
+│       ├── __init__.py           # Factory: get_vector_store(provider)
+│       ├── base.py               # Abstract base class
+│       ├── pinecone_store.py     # Pinecone implementation
+│       ├── weaviate_store.py     # Weaviate implementation
+│       └── qdrant_store.py       # Qdrant implementation
 ├── tools/
-│   ├── base.py               # 🔧 Tool registry
-│   ├── search_tool.py        # 🌐 Web search
-│   ├── calculator_tool.py    # 🧮 Calculator
-│   ├── weather_tool.py       # 🌤️ Weather
-│   ├── wikipedia_tool.py     # 📖 Wikipedia
-│   ├── url_reader_tool.py    # 🔗 URL reader
-│   ├── datetime_tool.py      # 🕐 Date/time
-│   ├── file_tool.py          # 📄 File reader
-│   ├── python_tool.py        # 🐍 Python executor
-│   └── rag_search_tool.py    # 📚 Document search (RAG)
+│   ├── base.py                   # 🔧 Tool registry
+│   ├── search_tool.py            # 🌐 Web search
+│   ├── calculator_tool.py        # 🧮 Calculator
+│   ├── weather_tool.py           # 🌤️ Weather
+│   ├── wikipedia_tool.py         # 📖 Wikipedia
+│   ├── url_reader_tool.py        # 🔗 URL reader
+│   ├── datetime_tool.py          # 🕐 Date/time
+│   ├── file_tool.py              # 📄 File reader
+│   ├── python_tool.py            # 🐍 Python executor
+│   └── rag_search_tool.py        # 📚 Document search (RAG)
 ├── prompts/
-│   └── react_prompt.txt      # 📋 System prompt template
+│   ├── react_prompt.txt          # 📋 Agent system prompt
+│   ├── auditor_prompt.txt        # 🛡️ Auditor evaluation prompt
+│   ├── quality_eval_prompt.txt   # 🔍 Validator scoring rubric
+│   └── validator_prompt.txt      # ✅ Validation instructions
 ├── .env.example
 └── requirements.txt
 ```
@@ -146,7 +203,8 @@ pip install -r requirements.txt
 
 # 4. Configure
 cp .env.example .env
-# Edit .env → add OPENROUTER_API_KEY (get free at https://openrouter.ai/keys)
+# Edit .env → add GROQ_API_KEY (get free at https://console.groq.com)
+# Optionally add OPENROUTER_API_KEY for fallback models
 
 # 5. Run
 streamlit run app.py
@@ -211,10 +269,12 @@ streamlit run app.py
 
 1. Push to GitHub
 2. Go to [share.streamlit.io](https://share.streamlit.io) → Deploy this repo
-3. In **Secrets**, add:
+3. In **Settings → Secrets**, add:
    ```toml
-   OPENROUTER_API_KEY = "your-key"
-   DEFAULT_MODEL = "x-ai/grok-4.1-fast"
+   GROQ_API_KEY = "your-groq-key"
+   OPENROUTER_API_KEY = "your-openrouter-key"
+   DEFAULT_MODEL = "groq::meta-llama/llama-4-scout-17b-16e-instruct"
+   MAX_ITERATIONS = "6"
    SUPABASE_URL = "https://your-project.supabase.co"
    SUPABASE_KEY = "your-anon-key"
    REDIS_URL = "redis://default:password@host:port"
@@ -223,6 +283,7 @@ streamlit run app.py
    WEAVIATE_API_KEY = "your-weaviate-key"
    QDRANT_URL = "https://your-cluster.cloud.qdrant.io:6333"
    QDRANT_API_KEY = "your-qdrant-key"
+   AUDITOR_MODEL = "google/gemini-2.0-flash-exp:free"
    ```
 
 ---
@@ -231,11 +292,15 @@ streamlit run app.py
 
 | Component | Technology |
 |-----------|------------|
-| LLM | Grok 4.1 Fast (via OpenRouter) |
+| LLM (Primary) | Llama 4 Scout via Groq |
+| LLM (Fallback) | Llama 3.3, Gemma 4, via Groq + OpenRouter |
 | Frontend | Streamlit |
+| Backend (Optional) | FastAPI |
 | Relational DB | PostgreSQL (Supabase) |
 | Vector DB | Pinecone / Weaviate / Qdrant (selectable) |
 | Cache | Redis |
+| Validator | Independent LLM judge (5-criteria scoring) |
+| Auditor | LLM fact-checker + Python cost analyzer |
 | Search | DuckDuckGo |
 | Math | SymPy |
 | PDF | PyPDF2 |
