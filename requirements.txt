@@ -41,3 +41,8 @@ weaviate-client>=4.0.0
 
 # Qdrant (cloud vector search with FastEmbed)
 qdrant-client[fastembed]>=1.9.0
+
+# === MCP (Model Context Protocol) ===
+
+# MCP SDK for connecting to external tool servers
+mcp>=1.0.0

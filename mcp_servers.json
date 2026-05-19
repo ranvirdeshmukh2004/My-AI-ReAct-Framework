@@ -1,0 +1,25 @@
+{
+  "servers": {
+    "example-fetch": {
+      "transport": "sse",
+      "url": "",
+      "api_key_env": "",
+      "enabled": false,
+      "description": "Example: Enhanced web page fetching via MCP"
+    },
+    "example-brave-search": {
+      "transport": "sse",
+      "url": "",
+      "api_key_env": "BRAVE_API_KEY",
+      "enabled": false,
+      "description": "Example: Web search via Brave Search API"
+    },
+    "example-github": {
+      "transport": "sse",
+      "url": "",
+      "api_key_env": "GITHUB_TOKEN",
+      "enabled": false,
+      "description": "Example: GitHub repository operations"
+    }
+  }
+}

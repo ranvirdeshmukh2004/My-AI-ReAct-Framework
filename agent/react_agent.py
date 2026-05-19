@@ -111,11 +111,14 @@ class ReactAgent:
     """
 
     def __init__(self, max_iterations: int = None, vector_provider: str = "pinecone",
-                 audit_enabled: bool = True, validator_enabled: bool = True):
+                 audit_enabled: bool = True, validator_enabled: bool = True,
+                 mcp_enabled: bool = False):
         self.max_iterations = max_iterations or int(os.getenv("MAX_ITERATIONS", "10"))
         self.prompt_template = load_prompt_template()
         self.audit_enabled = audit_enabled
         self.validator_enabled = validator_enabled
+        self.mcp_enabled = mcp_enabled
+        self.mcp_manager = None
 
         # Initialize infrastructure
         self.memory, self.memory_backend = get_memory()
@@ -140,6 +143,36 @@ class ReactAgent:
         self.tool_registry.register(url_reader_tool)
         self.tool_registry.register(datetime_tool)
         self.tool_registry.register(rag_search_tool)
+
+    # ── MCP Integration ──────────────────────────
+
+    def register_mcp_tools(self, mcp_manager):
+        """
+        Register tools from connected MCP servers.
+        Native tools always take priority — if an MCP tool has the
+        same name as a native tool, the MCP tool is skipped.
+        """
+        try:
+            from agent.mcp.bridge import create_mcp_tools
+            self.mcp_manager = mcp_manager
+            mcp_tools = create_mcp_tools(mcp_manager)
+            for tool in mcp_tools:
+                # Skip if a native tool already has this name
+                if self.tool_registry.get(tool.name) is None:
+                    self.tool_registry.register(tool)
+        except ImportError:
+            pass  # MCP package not installed — silently skip
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"MCP tool registration failed: {e}")
+
+    def unregister_mcp_tools(self):
+        """Remove all MCP tools from the registry (when user toggles MCP off)."""
+        if self.mcp_manager:
+            mcp_names = self.mcp_manager.get_tool_names()
+            for name in mcp_names:
+                self.tool_registry._tools.pop(name, None)
+            self.mcp_manager = None
 
     def _build_system_prompt(self) -> str:
         """Build the system prompt with tool descriptions injected."""

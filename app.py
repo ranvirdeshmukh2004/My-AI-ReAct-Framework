@@ -347,7 +347,10 @@ def init_session_state():
         import agent.react_agent as _agent_mod
         importlib.reload(_agent_mod)
         from agent.react_agent import ReactAgent
-        st.session_state.agent = ReactAgent(vector_provider=st.session_state.get("vector_provider", "pinecone"))
+        st.session_state.agent = ReactAgent(
+            vector_provider=st.session_state.get("vector_provider", "pinecone"),
+            mcp_enabled=st.session_state.get("mcp_enabled", False),
+        )
     if "session_id" not in st.session_state:
         from agent.memory import ConversationMemory
         st.session_state.session_id = ConversationMemory.new_session_id()
@@ -749,7 +752,10 @@ with st.sidebar:
     if new_provider != st.session_state.vector_provider:
         st.session_state.vector_provider = new_provider
         from agent.react_agent import ReactAgent
-        st.session_state.agent = ReactAgent(vector_provider=new_provider)
+        st.session_state.agent = ReactAgent(
+            vector_provider=new_provider,
+            mcp_enabled=st.session_state.get("mcp_enabled", False),
+        )
         st.rerun()
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
@@ -899,6 +905,104 @@ with st.sidebar:
 
     st.session_state.streaming_enabled = st.toggle("🌊 Stream Response", value=st.session_state.streaming_enabled,
                                                     help="Show live progress & typing effect (like ChatGPT). Disable for instant full response.")
+
+    # ── MCP Servers ──────────────────────────────
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    st.markdown('<div class="sb-section">🔌 MCP Servers</div>', unsafe_allow_html=True)
+
+    if "mcp_enabled" not in st.session_state:
+        st.session_state.mcp_enabled = False
+
+    mcp_toggle = st.toggle("🔌 Enable MCP", value=st.session_state.mcp_enabled,
+                            help="Connect to external tool servers via Model Context Protocol (SSE/HTTP)")
+
+    # Handle toggle change
+    if mcp_toggle != st.session_state.mcp_enabled:
+        st.session_state.mcp_enabled = mcp_toggle
+        if not mcp_toggle:
+            # Turning off — disconnect all MCP servers
+            mcp_mgr = st.session_state.get("mcp_manager")
+            if mcp_mgr:
+                st.session_state.agent.unregister_mcp_tools()
+                mcp_mgr.disconnect_all()
+                st.session_state.pop("mcp_manager", None)
+        st.rerun()
+
+    if st.session_state.mcp_enabled:
+        mcp_mgr = st.session_state.get("mcp_manager")
+
+        # Show connected servers
+        if mcp_mgr:
+            status = mcp_mgr.get_status()
+            if status:
+                for srv_name, info in status.items():
+                    cols = st.columns([0.75, 0.25])
+                    with cols[0]:
+                        icon = "🟢" if info.get("connected") else "🔴"
+                        count = info.get("tool_count", 0)
+                        st.caption(f"{icon} **{srv_name}** — {count} tools")
+                    with cols[1]:
+                        if st.button("✕", key=f"mcp_rm_{srv_name}", help=f"Disconnect {srv_name}"):
+                            mcp_mgr.remove_server(srv_name)
+                            st.session_state.agent.unregister_mcp_tools()
+                            # Re-register remaining MCP tools
+                            if len(mcp_mgr.get_all_tools()) > 0:
+                                st.session_state.agent.register_mcp_tools(mcp_mgr)
+                            st.rerun()
+            else:
+                st.caption("No servers connected yet")
+        else:
+            st.caption("No servers connected yet")
+
+        # "Add Server" form
+        with st.expander("➕ Add MCP Server"):
+            srv_name = st.text_input("Server Name", placeholder="e.g. My Brave Search",
+                                     key="mcp_add_name")
+            srv_url = st.text_input("Server URL", placeholder="https://mcp-server.example.com/sse",
+                                    key="mcp_add_url")
+            srv_key = st.text_input("API Key (optional)", type="password",
+                                    key="mcp_add_key", placeholder="Bearer token or API key")
+            srv_transport = st.selectbox("Transport", ["sse", "stdio"], index=0,
+                                         key="mcp_add_transport",
+                                         help="SSE = remote URL (works everywhere). stdio = local command (dev only).")
+
+            if st.button("🔗 Connect", key="mcp_connect_btn", use_container_width=True):
+                if srv_name and srv_url:
+                    with st.spinner(f"Connecting to {srv_name}..."):
+                        # Initialize manager if needed
+                        if "mcp_manager" not in st.session_state or st.session_state.mcp_manager is None:
+                            try:
+                                from agent.mcp import MCPManager
+                                st.session_state.mcp_manager = MCPManager()
+                            except ImportError:
+                                st.error("❌ MCP package not installed. Run: `pip install mcp`")
+                                st.stop()
+
+                        mgr = st.session_state.mcp_manager
+                        success = mgr.add_server(
+                            name=srv_name.strip(),
+                            url=srv_url.strip(),
+                            api_key=srv_key.strip() if srv_key else None,
+                            transport=srv_transport,
+                        )
+
+                        if success:
+                            # Re-register all MCP tools
+                            st.session_state.agent.unregister_mcp_tools()
+                            st.session_state.agent.register_mcp_tools(mgr)
+                            st.success(f"✅ Connected to {srv_name}")
+                        else:
+                            st.error(f"❌ Failed to connect to {srv_url}")
+                    st.rerun()
+                else:
+                    st.warning("Please enter both a name and URL")
+
+        # Tool count summary
+        native_count = 9
+        mcp_count = len(mcp_mgr.get_all_tools()) if mcp_mgr else 0
+        total = native_count + mcp_count
+        st.caption(f"📊 {native_count} native + {mcp_count} MCP = **{total} tools**")
+
 
 # ============================================
 # Header

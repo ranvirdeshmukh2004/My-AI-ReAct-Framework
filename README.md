@@ -160,6 +160,10 @@ My-AI-ReAct-Framework/
 │   │   ├── base.py               # Data models (ValidationReport)
 │   │   ├── quality.py            # 5-criteria quality evaluation
 │   │   └── math_validator.py     # Calculator re-verification
+│   ├── mcp/                      # 🔌 MCP (Model Context Protocol) client
+│   │   ├── __init__.py           # Exports MCPManager
+│   │   ├── client.py             # Multi-server connection manager
+│   │   └── bridge.py             # MCP tool → ReAct tool converter
 │   └── vector_stores/            # 🗄️ Vector database providers
 │       ├── __init__.py           # Factory: get_vector_store(provider)
 │       ├── base.py               # Abstract base class
@@ -182,6 +186,7 @@ My-AI-ReAct-Framework/
 │   ├── auditor_prompt.txt        # 🛡️ Auditor evaluation prompt
 │   ├── quality_eval_prompt.txt   # 🔍 Validator scoring rubric
 │   └── validator_prompt.txt      # ✅ Validation instructions
+├── mcp_servers.json              # 🔌 MCP server configuration
 ├── .env.example
 └── requirements.txt
 ```
@@ -288,6 +293,35 @@ streamlit run app.py
 
 ---
 
+## 🔌 MCP (Model Context Protocol)
+
+The agent supports **MCP** — an open standard for connecting AI apps to external tool servers. This is fully optional and toggleable from the sidebar.
+
+### How It Works
+1. Toggle **🔌 Enable MCP** in the sidebar
+2. Click **➕ Add MCP Server** → enter server name, URL, and optional API key
+3. The agent discovers tools from that server and adds them to its toolkit
+4. Use the tools alongside the 9 built-in native tools
+
+### Supported Transports
+| Transport | Works On | Use Case |
+|-----------|----------|----------|
+| **SSE/HTTP** | Everywhere (including Streamlit Cloud) | Remote MCP servers via URL |
+| **stdio** | Local dev only | Local subprocess servers |
+
+### Example MCP Servers
+| Server | What It Adds |
+|--------|-------------|
+| Brave Search | Enhanced web search with local business results |
+| GitHub | Repository management, issues, PRs, code search |
+| Filesystem | Secure file read/write/search |
+| PostgreSQL | Direct database queries |
+| Puppeteer | Full browser automation and screenshots |
+
+> MCP is additive — all 9 native tools always work. If MCP is disabled, the agent operates exactly as before.
+
+---
+
 ## 🔧 Tech Stack
 
 | Component | Technology |
@@ -299,6 +333,7 @@ streamlit run app.py
 | Relational DB | PostgreSQL (Supabase) |
 | Vector DB | Pinecone / Weaviate / Qdrant (selectable) |
 | Cache | Redis |
+| MCP | Model Context Protocol (SSE/HTTP + stdio) |
 | Validator | Independent LLM judge (5-criteria scoring) |
 | Auditor | LLM fact-checker + Python cost analyzer |
 | Search | DuckDuckGo |
