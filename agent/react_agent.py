@@ -119,6 +119,8 @@ class ReactAgent:
         self.validator_enabled = validator_enabled
         self.mcp_enabled = mcp_enabled
         self.mcp_manager = None
+        self.mcp_only = False  # When True, only MCP tools are available
+        self._native_tool_names = []  # Track native tool names for filtering
 
         # Initialize infrastructure
         self.memory, self.memory_backend = get_memory()
@@ -131,6 +133,7 @@ class ReactAgent:
         # Initialize and register all tools
         self.tool_registry = ToolRegistry()
         self._register_default_tools()
+        self._native_tool_names = list(self.tool_registry.list_names())
 
     def _register_default_tools(self):
         """Register all built-in tools."""
@@ -176,9 +179,16 @@ class ReactAgent:
 
     def _build_system_prompt(self) -> str:
         """Build the system prompt with tool descriptions injected."""
-        tool_descriptions = format_tool_descriptions(
-            self.tool_registry.get_tool_descriptions()
-        )
+        all_descriptions = self.tool_registry.get_tool_descriptions()
+
+        # In MCP-only mode, filter out native tools
+        if self.mcp_only and self.mcp_manager:
+            all_descriptions = [
+                d for d in all_descriptions
+                if d["name"] not in self._native_tool_names
+            ]
+
+        tool_descriptions = format_tool_descriptions(all_descriptions)
         return self.prompt_template.replace("{tools}", tool_descriptions)
 
     def _format_history(self, session_id: str) -> str:
@@ -273,7 +283,10 @@ class ReactAgent:
         for iteration in range(self.max_iterations):
             t_llm = time.time()
             _react_stop = ["Observation:", "\nObservation"]
-            llm_response = chat_completion(messages, model=model, stop=_react_stop) if model else chat_completion(messages, stop=_react_stop)
+            # Intermediate steps only need ~1024 tokens (Thought + Action + Action Input)
+            # This significantly reduces generation time per step
+            step_max_tokens = 1024
+            llm_response = chat_completion(messages, model=model, stop=_react_stop, max_tokens=step_max_tokens) if model else chat_completion(messages, stop=_react_stop, max_tokens=step_max_tokens)
             llm_time_ms += (time.time() - t_llm) * 1000
             accumulate_usage(token_usage, get_last_usage())
             parsed = parse_llm_output(llm_response)

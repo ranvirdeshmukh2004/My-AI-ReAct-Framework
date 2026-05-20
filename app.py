@@ -370,6 +370,10 @@ def init_session_state():
         st.session_state.validator_enabled = True
     if "streaming_enabled" not in st.session_state:
         st.session_state.streaming_enabled = True
+    if "mcp_enabled" not in st.session_state:
+        st.session_state.mcp_enabled = False
+    if "mcp_only" not in st.session_state:
+        st.session_state.mcp_only = False
     # Restore indexed_docs tracker into the doc_store (survives Streamlit reruns)
     if st.session_state.indexed_docs and hasattr(st.session_state.agent, 'doc_store'):
         try:
@@ -388,6 +392,7 @@ TOOL_ICONS = {
 # Available models for dropdowns
 AGENT_MODELS = {
     "⚡ Llama 4 Scout (Groq)": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
+    "🟣 Claude (Anthropic)": "claude::claude-sonnet-4-20250514",
     "⚡ Llama 3.3 70B (Groq)": "groq::llama-3.3-70b-versatile",
     "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
     "Llama 3.3 70B 🆓": "meta-llama/llama-3.3-70b-instruct:free",
@@ -396,6 +401,7 @@ AGENT_MODELS = {
 }
 AUDITOR_MODELS = {
     "⚡ Llama 4 Scout (Groq)": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
+    "🟣 Claude (Anthropic)": "claude::claude-sonnet-4-20250514",
     "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
     "Nemotron 3 Nano 30B 🆓": "nvidia/nemotron-3-nano-30b-a3b:free",
 }
@@ -667,7 +673,7 @@ def render_validation_panel(val_data: dict) -> str:
     # Quality Breakdown
     quality = val_data.get("quality")
     if quality:
-        eval_model = quality.get("evaluator_model", "").replace("groq::", "").split("/")[-1].replace(":free", "")
+        eval_model = quality.get("evaluator_model", "").replace("groq::", "").replace("claude::", "").split("/")[-1].replace(":free", "")
         reasoning = quality.get("reasoning", "")[:250]
 
         criteria = [
@@ -931,21 +937,56 @@ with st.sidebar:
     if st.session_state.mcp_enabled:
         mcp_mgr = st.session_state.get("mcp_manager")
 
-        # Show connected servers
+        # Show connected servers with tool details
         if mcp_mgr:
             status = mcp_mgr.get_status()
+            all_tools = mcp_mgr.get_tools_by_server()
+
             if status:
                 for srv_name, info in status.items():
-                    cols = st.columns([0.75, 0.25])
-                    with cols[0]:
-                        icon = "🟢" if info.get("connected") else "🔴"
-                        count = info.get("tool_count", 0)
-                        st.caption(f"{icon} **{srv_name}** — {count} tools")
-                    with cols[1]:
-                        if st.button("✕", key=f"mcp_rm_{srv_name}", help=f"Disconnect {srv_name}"):
+                    icon = "🟢" if info.get("connected") else "🔴"
+                    count = info.get("tool_count", 0)
+                    transport = info.get("transport", "?").upper()
+
+                    with st.expander(f"{icon} **{srv_name}** — {count} tools ({transport})", expanded=False):
+                        # Server info
+                        st.caption(f"🔗 `{info.get('url', 'N/A')}`")
+
+                        # Show discovered tools
+                        server_tools = {}
+                        for tn, val in all_tools.items():
+                            if isinstance(val, tuple) and len(val) == 2:
+                                sn, ti = val
+                                if sn == srv_name:
+                                    server_tools[tn] = ti
+                        if server_tools:
+                            st.markdown("**Discovered Tools:**")
+                            for tool_name, tool_info in server_tools.items():
+                                desc = tool_info.get("description", "No description")
+                                # Clean [MCP] prefix for display
+                                display_desc = desc.replace("[MCP] ", "")
+                                st.markdown(f"- 🔧 **`{tool_info.get('original_name', tool_name)}`**")
+                                st.caption(f"  {display_desc[:120]}")
+
+                                # Show input schema if available
+                                schema = tool_info.get("input_schema", {})
+                                props = schema.get("properties", {})
+                                if props:
+                                    param_list = ", ".join(
+                                        f"`{p}`" for p in list(props.keys())[:6]
+                                    )
+                                    st.caption(f"  📥 Params: {param_list}")
+                        else:
+                            st.caption("No tools discovered")
+
+                        # Show error if any
+                        if info.get("error"):
+                            st.error(f"Error: {info['error']}")
+
+                        # Disconnect button
+                        if st.button(f"🔌 Disconnect", key=f"mcp_rm_{srv_name}", use_container_width=True):
                             mcp_mgr.remove_server(srv_name)
                             st.session_state.agent.unregister_mcp_tools()
-                            # Re-register remaining MCP tools
                             if len(mcp_mgr.get_all_tools()) > 0:
                                 st.session_state.agent.register_mcp_tools(mcp_mgr)
                             st.rerun()
@@ -954,54 +995,77 @@ with st.sidebar:
         else:
             st.caption("No servers connected yet")
 
-        # "Add Server" form
+        # MCP-Only toggle (only show when servers are connected)
+        if mcp_mgr and mcp_mgr.get_status():
+            mcp_only = st.toggle("🎯 MCP Only Mode", value=st.session_state.get("mcp_only", False),
+                                  key="mcp_only_toggle",
+                                  help="ON = Agent uses ONLY MCP tools. OFF = Agent uses all tools (native + MCP).")
+            if mcp_only != st.session_state.get("mcp_only", False):
+                st.session_state.mcp_only = mcp_only
+                st.session_state.agent.mcp_only = mcp_only
+                st.rerun()
+
+        # "Add Server" form — simplified
         with st.expander("➕ Add MCP Server"):
-            srv_name = st.text_input("Server Name", placeholder="e.g. My Brave Search",
+            srv_name = st.text_input("Server Name", placeholder="e.g. Hind AI Defence",
                                      key="mcp_add_name")
-            srv_url = st.text_input("Server URL", placeholder="https://mcp-server.example.com/sse",
+            srv_url = st.text_input("Server URL", placeholder="https://your-server.onrender.com/mcp",
                                     key="mcp_add_url")
             srv_key = st.text_input("API Key (optional)", type="password",
-                                    key="mcp_add_key", placeholder="Bearer token or API key")
-            srv_transport = st.selectbox("Transport", ["sse", "stdio"], index=0,
-                                         key="mcp_add_transport",
-                                         help="SSE = remote URL (works everywhere). stdio = local command (dev only).")
+                                    key="mcp_add_key", placeholder="Leave empty if not required")
 
             if st.button("🔗 Connect", key="mcp_connect_btn", use_container_width=True):
                 if srv_name and srv_url:
-                    with st.spinner(f"Connecting to {srv_name}..."):
-                        # Initialize manager if needed
-                        if "mcp_manager" not in st.session_state or st.session_state.mcp_manager is None:
-                            try:
-                                from agent.mcp import MCPManager
-                                st.session_state.mcp_manager = MCPManager()
-                            except ImportError:
-                                st.error("❌ MCP package not installed. Run: `pip install mcp`")
-                                st.stop()
+                    # Initialize manager if needed
+                    if "mcp_manager" not in st.session_state or st.session_state.mcp_manager is None:
+                        try:
+                            from agent.mcp import MCPManager
+                            if MCPManager is None:
+                                raise ImportError("mcp package not installed")
+                            st.session_state.mcp_manager = MCPManager()
+                        except (ImportError, Exception) as e:
+                            st.error(f"❌ MCP not available: {e}. Run: `pip install mcp`")
+                            st.stop()
 
-                        mgr = st.session_state.mcp_manager
+                    mgr = st.session_state.mcp_manager
+
+                    # Auto-detect transport: URLs → rest (JSON-RPC), commands → stdio
+                    url_stripped = srv_url.strip()
+                    if url_stripped.startswith("http://") or url_stripped.startswith("https://"):
+                        auto_transport = "rest"
+                    else:
+                        auto_transport = "stdio"
+
+                    try:
                         success = mgr.add_server(
                             name=srv_name.strip(),
-                            url=srv_url.strip(),
+                            url=url_stripped,
                             api_key=srv_key.strip() if srv_key else None,
-                            transport=srv_transport,
+                            transport=auto_transport,
                         )
+                    except Exception as e:
+                        st.error(f"❌ Connection error: {e}")
+                        success = False
 
-                        if success:
-                            # Re-register all MCP tools
-                            st.session_state.agent.unregister_mcp_tools()
-                            st.session_state.agent.register_mcp_tools(mgr)
-                            st.success(f"✅ Connected to {srv_name}")
-                        else:
-                            st.error(f"❌ Failed to connect to {srv_url}")
-                    st.rerun()
+                    if success:
+                        st.session_state.agent.unregister_mcp_tools()
+                        st.session_state.agent.register_mcp_tools(mgr)
+                        st.rerun()
+                    else:
+                        status = mgr.get_status()
+                        err = status.get(srv_name.strip(), {}).get("error", "Connection refused or timed out")
+                        st.error(f"❌ Failed to connect to **{srv_name}**: {err}")
                 else:
                     st.warning("Please enter both a name and URL")
 
         # Tool count summary
-        native_count = 9
         mcp_count = len(mcp_mgr.get_all_tools()) if mcp_mgr else 0
-        total = native_count + mcp_count
-        st.caption(f"📊 {native_count} native + {mcp_count} MCP = **{total} tools**")
+        native_count = len(st.session_state.agent._native_tool_names)
+        if st.session_state.get("mcp_only", False) and mcp_count > 0:
+            st.caption(f"🎯 **MCP Only** — {mcp_count} tools active")
+        else:
+            total = native_count + mcp_count
+            st.caption(f"📊 {native_count} native + {mcp_count} MCP = **{total} tools**")
 
 
 # ============================================
@@ -1333,7 +1397,7 @@ if prompt := (_regen or st.chat_input("Ask me anything — I can search, calcula
                 llm_ms = timing.get("llm_ms", 0)
                 vs_ms = timing.get("vector_search_ms", 0)
 
-                _model_short = st.session_state.selected_model.replace('groq::', '').split('/')[-1].replace(':free', '')
+                _model_short = st.session_state.selected_model.replace('groq::', '').replace('claude::', '').split('/')[-1].replace(':free', '')
                 st.markdown(f"""
                 <div class="token-bar">
                     <span class="prov">🤖 {_model_short}</span>

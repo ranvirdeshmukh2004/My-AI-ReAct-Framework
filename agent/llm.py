@@ -3,6 +3,7 @@ llm.py — Multi-Provider LLM Client
 =====================================
 Routes API calls to the correct provider:
   - Groq (groq:: prefix) — fast, reliable, per-account rate limits
+  - Anthropic/Claude (claude:: prefix) — premium quality, API key required
   - OpenRouter (default) — wide model selection, shared free-tier
 
 Groq is the recommended default for reliability.
@@ -49,6 +50,7 @@ def accumulate_usage(accumulator: dict, usage: dict) -> None:
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 
 
 def _get_secret(key: str, default: str = "") -> str:
@@ -64,10 +66,12 @@ def _get_secret(key: str, default: str = "") -> str:
 
 OPENROUTER_API_KEY = _get_secret("OPENROUTER_API_KEY", "")
 GROQ_API_KEY = _get_secret("GROQ_API_KEY", "")
+ANTHROPIC_API_KEY = _get_secret("ANTHROPIC_API_KEY", "")
 DEFAULT_MODEL = _get_secret("DEFAULT_MODEL", "groq::meta-llama/llama-4-scout-17b-16e-instruct")
 
-# Groq models use a special prefix so we know to route to Groq API
+# Provider prefixes for routing
 GROQ_MODEL_PREFIX = "groq::"
+CLAUDE_MODEL_PREFIX = "claude::"
 
 # Fallback chain: Groq first (reliable), then OpenRouter free models
 # Only includes models with working API keys
@@ -77,6 +81,8 @@ def _build_fallback_list():
     if GROQ_API_KEY:
         fallbacks.append("groq::meta-llama/llama-4-scout-17b-16e-instruct")
         fallbacks.append("groq::llama-3.3-70b-versatile")
+    if ANTHROPIC_API_KEY:
+        fallbacks.append("claude::claude-sonnet-4-20250514")
     if OPENROUTER_API_KEY:
         fallbacks.append("google/gemma-4-31b-it:free")
         fallbacks.append("meta-llama/llama-3.3-70b-instruct:free")
@@ -93,9 +99,19 @@ def _is_groq_model(model: str) -> bool:
     return model.startswith(GROQ_MODEL_PREFIX)
 
 
+def _is_claude_model(model: str) -> bool:
+    """Check if a model should be routed to Anthropic."""
+    return model.startswith(CLAUDE_MODEL_PREFIX)
+
+
 def _groq_model_id(model: str) -> str:
     """Strip the groq:: prefix to get the actual Groq model ID."""
     return model[len(GROQ_MODEL_PREFIX):]
+
+
+def _claude_model_id(model: str) -> str:
+    """Strip the claude:: prefix to get the actual Anthropic model ID."""
+    return model[len(CLAUDE_MODEL_PREFIX):]
 
 
 def _get_api_config(model: str) -> tuple:
@@ -111,6 +127,16 @@ def _get_api_config(model: str) -> tuple:
                 "Content-Type": "application/json",
             },
             _groq_model_id(model),
+        )
+    if _is_claude_model(model):
+        return (
+            ANTHROPIC_API_URL,
+            {
+                "x-api-key": ANTHROPIC_API_KEY,
+                "Content-Type": "application/json",
+                "anthropic-version": "2023-06-01",
+            },
+            _claude_model_id(model),
         )
     return (
         OPENROUTER_API_URL,
@@ -160,6 +186,64 @@ def _get_wait_time(response, attempt: int) -> int:
 
 
 # ============================================
+# Claude/Anthropic Helpers
+# ============================================
+
+def _build_claude_payload(messages: list[dict], model: str, temperature: float,
+                          max_tokens: int, stop: list[str] | None = None) -> dict:
+    """
+    Convert OpenAI-format messages to Anthropic Messages API format.
+
+    Key differences:
+    - System message goes in a separate 'system' field
+    - Only 'user' and 'assistant' roles in the messages array
+    - 'stop' → 'stop_sequences'
+    """
+    system_text = ""
+    claude_messages = []
+
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+
+        if role == "system":
+            system_text = content
+        elif role == "assistant":
+            claude_messages.append({"role": "assistant", "content": content})
+        else:
+            # Map everything else (user, function, tool) to user
+            claude_messages.append({"role": "user", "content": content})
+
+    # Ensure messages alternate user/assistant (Anthropic requirement)
+    # Merge consecutive same-role messages
+    merged = []
+    for msg in claude_messages:
+        if merged and merged[-1]["role"] == msg["role"]:
+            merged[-1]["content"] += "\n\n" + msg["content"]
+        else:
+            merged.append(msg)
+
+    # Ensure first message is from user
+    if not merged or merged[0]["role"] != "user":
+        merged.insert(0, {"role": "user", "content": "Hello"})
+
+    payload = {
+        "model": model,
+        "messages": merged,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+
+    if system_text:
+        payload["system"] = system_text
+
+    if stop:
+        payload["stop_sequences"] = stop
+
+    return payload
+
+
+# ============================================
 # Chat Completion (blocking)
 # ============================================
 
@@ -200,23 +284,44 @@ def chat_completion(
             try:
                 api_url, headers, actual_model = _get_api_config(current_model)
 
-                payload = {
-                    "model": actual_model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                }
-                if not _is_groq_model(current_model):
-                    payload["include_reasoning"] = False
-                if stop:
-                    payload["stop"] = stop
+                # Claude uses a different API format (Messages API)
+                if _is_claude_model(current_model):
+                    payload = _build_claude_payload(messages, actual_model, temperature, max_tokens, stop)
+                else:
+                    payload = {
+                        "model": actual_model,
+                        "messages": messages,
+                        "temperature": temperature,
+                        "max_tokens": max_tokens,
+                    }
+                    if not _is_groq_model(current_model):
+                        payload["include_reasoning"] = False
+                    if stop:
+                        payload["stop"] = stop
 
-                with httpx.Client(timeout=120.0) as client:
+                # Provider-specific timeouts
+                timeout = 15.0 if _is_groq_model(current_model) else (60.0 if _is_claude_model(current_model) else 90.0)
+                with httpx.Client(timeout=timeout) as client:
                     response = client.post(api_url, headers=headers, json=payload)
 
                 # Success
                 if response.status_code == 200:
                     data = response.json()
+
+                    # Claude response format
+                    if _is_claude_model(current_model):
+                        _last_usage = {
+                            "prompt_tokens": data.get("usage", {}).get("input_tokens", 0),
+                            "completion_tokens": data.get("usage", {}).get("output_tokens", 0),
+                            "total_tokens": data.get("usage", {}).get("input_tokens", 0) + data.get("usage", {}).get("output_tokens", 0),
+                        }
+                        content = data.get("content", [])
+                        texts = [block["text"] for block in content if block.get("type") == "text"]
+                        if texts:
+                            return "\n".join(texts)
+                        raise Exception(f"Unexpected Claude response: {json.dumps(data)[:200]}")
+
+                    # OpenAI-compatible response format (Groq, OpenRouter)
                     _last_usage = data.get("usage", {})
                     if "choices" in data and len(data["choices"]) > 0:
                         return data["choices"][0]["message"]["content"]
@@ -282,19 +387,25 @@ def stream_chat_completion(
             try:
                 api_url, headers, actual_model = _get_api_config(current_model)
 
-                payload = {
-                    "model": actual_model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    "stream": True,
-                }
-                if not _is_groq_model(current_model):
-                    payload["include_reasoning"] = False
-                if stop:
-                    payload["stop"] = stop
+                # Claude uses a different API format
+                if _is_claude_model(current_model):
+                    payload = _build_claude_payload(messages, actual_model, temperature, max_tokens, stop)
+                    payload["stream"] = True
+                else:
+                    payload = {
+                        "model": actual_model,
+                        "messages": messages,
+                        "temperature": temperature,
+                        "max_tokens": max_tokens,
+                        "stream": True,
+                    }
+                    if not _is_groq_model(current_model):
+                        payload["include_reasoning"] = False
+                    if stop:
+                        payload["stop"] = stop
 
-                with httpx.Client(timeout=120.0) as client:
+                timeout = 15.0 if _is_groq_model(current_model) else (60.0 if _is_claude_model(current_model) else 90.0)
+                with httpx.Client(timeout=timeout) as client:
                     with client.stream("POST", api_url, headers=headers, json=payload) as response:
                         if response.status_code != 200:
                             # Groq 429 — wait and retry same model
@@ -311,16 +422,16 @@ def stream_chat_completion(
                                 time.sleep(wait)
                                 continue  # Retry same Groq model
 
-                            short_name = current_model.replace('groq::', '').split('/')[-1]
+                            short_name = current_model.replace('groq::', '').replace('claude::', '').split('/')[-1]
                             error_trail.append(f"{short_name}→{response.status_code}")
 
                             if _should_retry(response.status_code) and attempt < len(models_to_try) - 1:
                                 next_model = models_to_try[attempt + 1]
-                                short_next = next_model.replace('groq::', '').split('/')[-1]
+                                short_next = next_model.replace('groq::', '').replace('claude::', '').split('/')[-1]
                                 print(f"⏳ {short_name} failed ({response.status_code}). Switching to {short_next}...")
                             break  # Exit groq_retry loop
 
-                        # Parse SSE (Server-Sent Events) stream
+                        # Parse SSE stream
                         for line in response.iter_lines():
                             if line.startswith("data: "):
                                 data_str = line[6:]
@@ -330,6 +441,29 @@ def stream_chat_completion(
 
                                 try:
                                     data = json.loads(data_str)
+
+                                    # Claude SSE format
+                                    if _is_claude_model(current_model):
+                                        event_type = data.get("type", "")
+                                        if event_type == "content_block_delta":
+                                            delta = data.get("delta", {})
+                                            if delta.get("type") == "text_delta":
+                                                text = delta.get("text", "")
+                                                if text:
+                                                    yield text
+                                        elif event_type == "message_delta":
+                                            usage = data.get("usage", {})
+                                            if usage:
+                                                _last_usage = {
+                                                    "prompt_tokens": usage.get("input_tokens", 0),
+                                                    "completion_tokens": usage.get("output_tokens", 0),
+                                                    "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
+                                                }
+                                        elif event_type == "message_stop":
+                                            return
+                                        continue
+
+                                    # OpenAI SSE format (Groq, OpenRouter)
                                     if "usage" in data:
                                         _last_usage = data["usage"]
                                     delta = data["choices"][0].get("delta", {})

@@ -43,6 +43,7 @@ ABSOLUTE RULES — VIOLATIONS WILL BREAK THE SYSTEM
 11. **EFFICIENCY**: If web_search returns no results or irrelevant results TWICE, STOP searching. Answer from your training knowledge instead. Do NOT retry the same search with minor rewording.
 12. **STEP LIMIT**: Aim to answer within 3-5 steps maximum. Do not use more than 5 tool calls for a single question. If you have partial information after 3 steps, synthesize what you have into a Final Answer.
 13. **GENERAL KNOWLEDGE**: For well-known facts (top universities, capitals, famous people, etc.), answer directly from your knowledge WITHOUT using tools. Only use tools when the question requires current/real-time data.
+14. **MCP TOOLS (HIGHEST PRIORITY)**: Tools marked with [MCP] are specialized external services. If ANY [MCP] tool is relevant to the query, you MUST use it FIRST before trying web_search, wikipedia, or other generic tools. MCP tools provide authoritative, domain-specific results that are far more accurate than web searches. Only fall back to generic tools if the MCP tool's response is insufficient. For JSON input, use the format shown in the tool description.
 
 ====================================================
 CITATION RULES
