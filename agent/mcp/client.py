@@ -125,7 +125,7 @@ class MCPManager:
         try:
             return self._run_async(
                 self._async_add_server(name, url, api_key, transport, description),
-                timeout=30.0,
+                timeout=90.0,  # High timeout for Render free-tier cold starts
             )
         except Exception as e:
             # Extract useful error message (ExceptionGroups nest errors)
@@ -275,34 +275,49 @@ class MCPManager:
                 req_headers["Authorization"] = f"Bearer {api_key}"
 
             # Probe the endpoint using JSON-RPC tools/list
-            try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    probe = await client.post(
-                        call_url,
-                        json={
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "tools/list",
-                            "params": {},
-                        },
-                        headers=req_headers,
-                    )
-                    logger.info(f"MCP REST: Server '{name}' reachable (status {probe.status_code})")
+            # Render free-tier servers can take 30-60s to cold-start
+            probe_timeout = 60.0
+            max_probe_retries = 2
+            discovered_tools = []
 
-                    # Try to extract tools from the response
-                    discovered_tools = []
-                    if probe.status_code == 200:
-                        try:
-                            probe_data = probe.json()
-                            result = probe_data.get("result", {})
-                            if isinstance(result, dict) and "tools" in result:
-                                discovered_tools = result["tools"]
-                                logger.info(f"MCP REST: Discovered {len(discovered_tools)} tools from JSON-RPC")
-                        except Exception:
-                            pass
-            except Exception as probe_err:
-                logger.error(f"MCP REST: Cannot reach '{name}' at {call_url}: {probe_err}")
-                return False
+            for probe_attempt in range(max_probe_retries):
+                try:
+                    async with httpx.AsyncClient(timeout=probe_timeout) as client:
+                        probe = await client.post(
+                            call_url,
+                            json={
+                                "jsonrpc": "2.0",
+                                "id": 1,
+                                "method": "tools/list",
+                                "params": {},
+                            },
+                            headers=req_headers,
+                        )
+                        logger.info(f"MCP REST: Server '{name}' reachable (status {probe.status_code})")
+
+                        # Try to extract tools from the response
+                        if probe.status_code == 200:
+                            try:
+                                probe_data = probe.json()
+                                result = probe_data.get("result", {})
+                                if isinstance(result, dict) and "tools" in result:
+                                    discovered_tools = result["tools"]
+                                    logger.info(f"MCP REST: Discovered {len(discovered_tools)} tools from JSON-RPC")
+                            except Exception:
+                                pass
+                        break  # Success — exit retry loop
+                except Exception as probe_err:
+                    if probe_attempt < max_probe_retries - 1:
+                        logger.warning(f"MCP REST: Probe attempt {probe_attempt + 1} failed for '{name}': {probe_err}. Retrying...")
+                        import asyncio as _aio
+                        await _aio.sleep(2)
+                    else:
+                        logger.error(f"MCP REST: Cannot reach '{name}' at {call_url}: {probe_err}")
+                        self._server_info[name] = {
+                            "url": url, "connected": False, "tool_count": 0,
+                            "transport": "rest", "error": str(probe_err),
+                        }
+                        return False
 
             # Store REST server info (no MCP session needed)
             self._sessions[name] = "rest"  # Marker for REST transport
@@ -446,7 +461,7 @@ class MCPManager:
             arguments = self._prepare_arguments(tool_name, input_text)
             return self._run_async(
                 self._async_call_tool(tool_name, arguments),
-                timeout=30.0,
+                timeout=90.0,  # High timeout for Render cold-start + Claude processing
             )
         except Exception as e:
             return f"❌ Error calling MCP tool '{tool_name}': {e}"
