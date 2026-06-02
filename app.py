@@ -1021,7 +1021,7 @@ with st.sidebar:
                 with _kb_cols[1]:
                     _preview_key = f"preview_{doc_name}"
                     if st.button("👁️", key=_preview_key, help=f"Preview {doc_name}"):
-                        _pdf_path = os.path.join("uploads", doc_name)
+                        _pdf_path = os.path.join("static/uploads", doc_name)
                         if os.path.exists(_pdf_path):
                             st.session_state.pdf_preview_active = True
                             st.session_state.pdf_preview_path = _pdf_path
@@ -1520,7 +1520,7 @@ with chat_col:
             key="main_file_uploader",
         )
         if uploaded_file:
-            upload_dir = "uploads"
+            upload_dir = "static/uploads"
             os.makedirs(upload_dir, exist_ok=True)
             file_path = os.path.join(upload_dir, uploaded_file.name)
             with open(file_path, "wb") as f:
