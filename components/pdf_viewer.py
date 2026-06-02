@@ -22,9 +22,10 @@ def render_pdf_viewer(pdf_filename: str, height: int = 750, key: str = "pdf_view
         height: Height of the viewer component in pixels.
         key: Unique key for the Streamlit component.
     """
+    import urllib.parse
+    encoded_filename = urllib.parse.quote(pdf_filename)
     # Point the iframe to the locally hosted pdf.js viewer and pass the file path
-    viewer_url = f"app/static/pdfjs/web/viewer.html?file=../../uploads/{pdf_filename}"
-    
+    viewer_url = f"app/static/pdfjs/web/viewer.html?file=../../uploads/{encoded_filename}"
     st.components.v1.iframe(
         viewer_url,
         height=height,
