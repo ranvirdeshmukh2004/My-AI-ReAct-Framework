@@ -1253,7 +1253,7 @@ with st.sidebar:
 # ============================================
 # PDF Viewer Component + JS Listener
 # ============================================
-from components.pdf_viewer import render_pdf_viewer, render_pdf_viewer_header, get_query_from_selection
+from components.pdf_viewer import render_pdf_viewer, get_query_from_selection
 
 # JS listener to receive messages from the PDF viewer iframe
 _components.html("""
