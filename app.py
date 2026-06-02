@@ -2,10 +2,11 @@
 app.py — AI Agent Frontend (Streamlit)
 ========================================
 Premium dark-themed chat interface with infrastructure monitoring,
-cache stats, and RAG knowledge base display.
+cache stats, RAG knowledge base display, and interactive PDF preview.
 """
 
 import os
+import base64
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -330,6 +331,163 @@ st.markdown("""
 .agree-full { background: rgba(52,211,153,0.15); color: #34d399; }
 .agree-partial { background: rgba(251,191,36,0.15); color: #fbbf24; }
 .agree-contradiction { background: rgba(248,113,113,0.15); color: #f87171; }
+/* ============================================
+   PDF Preview & Split Layout
+   ============================================ */
+
+/* PDF preview panel container */
+.pdf-preview-panel {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    overflow: hidden;
+    height: calc(100vh - 120px);
+    display: flex;
+    flex-direction: column;
+}
+
+.pdf-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.pdf-preview-header .file-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pdf-preview-header .file-name {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #e2e8f0;
+}
+
+.pdf-preview-header .file-badge {
+    font-size: 0.65rem;
+    color: #818cf8;
+    background: rgba(129,140,248,0.12);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+/* Attach button */
+.attach-area {
+    display: flex;
+    align-items: center;
+    gap: 0;
+}
+
+.attach-btn {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-right: none;
+    border-radius: 10px 0 0 10px;
+    color: #818cf8;
+    cursor: pointer;
+    padding: 8px 12px;
+    font-size: 1.1rem;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+}
+.attach-btn:hover {
+    background: rgba(129,140,248,0.12);
+    color: #a5b4fc;
+}
+
+/* Upload notification pill */
+.upload-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: linear-gradient(135deg, rgba(52,211,153,0.1), rgba(52,211,153,0.05));
+    border: 1px solid rgba(52,211,153,0.2);
+    border-radius: 8px;
+    font-size: 0.75rem;
+    color: #34d399;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    animation: fadeIn 0.3s ease;
+}
+
+.preview-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    background: rgba(129,140,248,0.1);
+    border: 1px solid rgba(129,140,248,0.2);
+    border-radius: 6px;
+    color: #a5b4fc;
+    font-size: 0.68rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-decoration: none;
+}
+.preview-btn:hover {
+    background: rgba(129,140,248,0.2);
+    border-color: rgba(129,140,248,0.35);
+    color: #c7d2fe;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Query from PDF selection pill */
+.pdf-query-pill {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, rgba(129,140,248,0.08), rgba(192,132,252,0.06));
+    border: 1px solid rgba(129,140,248,0.2);
+    border-radius: 10px;
+    margin-bottom: 0.6rem;
+    animation: fadeIn 0.3s ease;
+}
+
+.pdf-query-pill .pq-icon { font-size: 1rem; flex-shrink: 0; padding-top: 1px; }
+
+.pdf-query-pill .pq-content { flex: 1; }
+
+.pdf-query-pill .pq-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #818cf8;
+    margin-bottom: 3px;
+}
+
+.pdf-query-pill .pq-text {
+    font-size: 0.78rem;
+    color: #cbd5e1;
+    line-height: 1.45;
+    font-style: italic;
+}
+
+.pdf-query-pill .pq-dismiss {
+    background: none;
+    border: none;
+    color: #636e80;
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: all 0.15s;
+}
+.pdf-query-pill .pq-dismiss:hover { color: #f87171; background: rgba(248,113,113,0.12); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -374,6 +532,15 @@ def init_session_state():
         st.session_state.mcp_enabled = False
     if "mcp_only" not in st.session_state:
         st.session_state.mcp_only = False
+    # PDF Preview state
+    if "pdf_preview_active" not in st.session_state:
+        st.session_state.pdf_preview_active = False
+    if "pdf_preview_path" not in st.session_state:
+        st.session_state.pdf_preview_path = None
+    if "pdf_preview_filename" not in st.session_state:
+        st.session_state.pdf_preview_filename = None
+    if "pdf_query_text" not in st.session_state:
+        st.session_state.pdf_query_text = None
     # Restore indexed_docs tracker into the doc_store (survives Streamlit reruns)
     if st.session_state.indexed_docs and hasattr(st.session_state.agent, 'doc_store'):
         try:
@@ -812,39 +979,31 @@ with st.sidebar:
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-    # --- File Upload + Knowledge Base ---
-    st.markdown('<div class="sb-section">📁 Upload File</div>', unsafe_allow_html=True)
-    uploaded_file = st.file_uploader("Upload", type=["txt", "pdf"], label_visibility="collapsed")
-    if uploaded_file:
-        upload_dir = "uploads"
-        os.makedirs(upload_dir, exist_ok=True)
-        file_path = os.path.join(upload_dir, uploaded_file.name)
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        st.session_state.uploaded_file_path = file_path
-
-        # Index into vector store for RAG
-        if st.session_state.agent.doc_store.is_available:
-            from tools.file_tool import read_file
-            text = read_file(file_path)
-            chunks = st.session_state.agent.doc_store.add_document(uploaded_file.name, text)
-            # Persist in session state so it survives reruns
-            st.session_state.indexed_docs[uploaded_file.name] = chunks
-            st.success(f"✅ {uploaded_file.name} — indexed {chunks} chunks")
-        else:
-            st.success(f"✅ {uploaded_file.name}")
-
+    # --- Knowledge Base (uploaded docs) ---
     # Show indexed documents (from session state — persists across reruns)
     indexed = st.session_state.indexed_docs
     if indexed:
         st.markdown('<div class="sb-section">📚 Knowledge Base</div>', unsafe_allow_html=True)
         for doc_name, chunk_count in indexed.items():
-            st.markdown(f"""
-            <div class="sb-card">
-                <div class="name">📄 {doc_name}</div>
-                <div class="desc">{chunk_count} chunks indexed</div>
-            </div>
-            """, unsafe_allow_html=True)
+            is_pdf = doc_name.lower().endswith('.pdf')
+            _kb_cols = st.columns([4, 1]) if is_pdf else [st.container()]
+            with _kb_cols[0]:
+                st.markdown(f"""
+                <div class="sb-card">
+                    <div class="name">📄 {doc_name}</div>
+                    <div class="desc">{chunk_count} chunks indexed</div>
+                </div>
+                """, unsafe_allow_html=True)
+            if is_pdf:
+                with _kb_cols[1]:
+                    _preview_key = f"preview_{doc_name}"
+                    if st.button("👁️", key=_preview_key, help=f"Preview {doc_name}"):
+                        _pdf_path = os.path.join("uploads", doc_name)
+                        if os.path.exists(_pdf_path):
+                            st.session_state.pdf_preview_active = True
+                            st.session_state.pdf_preview_path = _pdf_path
+                            st.session_state.pdf_preview_filename = doc_name
+                            st.rerun()
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
@@ -1069,395 +1228,585 @@ with st.sidebar:
 
 
 # ============================================
-# Header
+# PDF Viewer Component + JS Listener
 # ============================================
-st.markdown("""
-<div class="hero">
-    <h1>⚡ AI Agent</h1>
-    <div class="subtitle">Autonomous reasoning & tool execution — Multi-Model via OpenRouter</div>
-    <div class="badge-row">
-        <span class="hbadge">🌐 Web Search</span>
-        <span class="hbadge">🧮 Calculator</span>
-        <span class="hbadge">🌤️ Weather</span>
-        <span class="hbadge">📖 Wikipedia</span>
-        <span class="hbadge">🐍 Python</span>
-        <span class="hbadge">🔗 URL Reader</span>
-        <span class="hbadge">🕐 DateTime</span>
-        <span class="hbadge">📄 File Reader</span>
-        <span class="hbadge">📚 Doc Search</span>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+from components.pdf_viewer import render_pdf_viewer, render_pdf_viewer_header, get_query_from_selection
 
-
-# ============================================
-# Reasoning Trace Display
-# ============================================
-def display_reasoning_trace(steps: list):
-    with st.expander("🔍 View Reasoning Trace", expanded=False):
-        for step in steps:
-            if step["type"] == "tool_use":
-                if step.get("thought"):
-                    st.markdown(f"""<div class="trace-step thought">
-                        <div class="trace-label thought">💭 Thought</div>
-                        {step['thought']}
-                    </div>""", unsafe_allow_html=True)
-
-                icon = TOOL_ICONS.get(step['action'], '🔧')
-                cached_chip = '<span class="cached-chip">⚡ CACHED</span>' if step.get("cached") else ""
-                st.markdown(f"""<div class="trace-step action">
-                    <div class="trace-label action">⚡ Action</div>
-                    <span class="tool-chip">{icon} {step['action']}</span>{cached_chip}
-                    <br><code>{step['action_input']}</code>
-                </div>""", unsafe_allow_html=True)
-
-                if step.get("observation"):
-                    obs = step["observation"][:500]
-                    if len(step["observation"]) > 500:
-                        obs += "..."
-                    st.markdown(f"""<div class="trace-step observation">
-                        <div class="trace-label observation">👁️ Observation</div>
-                        <pre style="white-space:pre-wrap;font-size:0.78rem;color:#94a3b8;
-                            background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;
-                            margin-top:0.3rem;">{obs}</pre>
-                    </div>""", unsafe_allow_html=True)
-
-                st.markdown(f'<div class="step-num">Step {step["iteration"]}</div>', unsafe_allow_html=True)
-
-            elif step["type"] in ("final_answer", "max_iterations"):
-                cached_note = ""
-                if step.get("cached"):
-                    cached_note = ' <span class="cached-chip">⚡ CACHED</span>'
-                if step.get("thought"):
-                    st.markdown(f"""<div class="trace-step thought">
-                        <div class="trace-label thought">💭 Final Thought{cached_note}</div>
-                        {step['thought']}
-                    </div>""", unsafe_allow_html=True)
+# JS listener to receive messages from the PDF viewer iframe
+_components.html("""
+<script>
+window.addEventListener('message', function(event) {
+    if (event.data && event.data.type === 'pdf_viewer_event') {
+        // Forward to Streamlit via query params workaround
+        const action = event.data.action;
+        const data = event.data.data;
+        if (action === 'ask_ai' && data && data.text) {
+            // Use sessionStorage to pass data, then trigger a rerun
+            sessionStorage.setItem('pdf_selected_text', data.text);
+            sessionStorage.setItem('pdf_selected_mode', data.mode || 'ask');
+            // Create a hidden form to trigger Streamlit rerun with the data
+            const existing = document.getElementById('pdf-query-trigger');
+            if (existing) existing.remove();
+            const container = document.createElement('div');
+            container.id = 'pdf-query-trigger';
+            container.innerHTML = `
+                <form id="pdf-query-form" method="post" action="" style="display:none;">
+                    <input type="hidden" name="pdf_text" value="${encodeURIComponent(data.text)}">
+                    <input type="hidden" name="pdf_mode" value="${data.mode || 'ask'}">
+                </form>
+            `;
+            document.body.appendChild(container);
+            // Use Streamlit's setComponentValue pattern
+            window.parent.postMessage({
+                isStreamlitMessage: true,
+                type: 'streamlit:setComponentValue',
+                value: { text: data.text, mode: data.mode || 'ask' }
+            }, '*');
+        }
+    }
+});
+</script>
+""", height=0)
 
 
 # ============================================
-# Chat Messages
+# Split-Pane Layout: PDF Preview + Chat
 # ============================================
-for message in st.session_state.messages:
-    if message["role"] == "user":
-        with st.chat_message("user", avatar="👤"):
-            st.markdown(message["content"])
-    elif message["role"] == "assistant":
-        with st.chat_message("assistant", avatar="⚡"):
-            # Render with citations
-            msg_sources = message.get("sources", [])
-            cited_html, final_sources = render_citations(message["content"], msg_sources)
-            if final_sources:
-                st.markdown(cited_html, unsafe_allow_html=True)
-            else:
-                st.markdown(cited_html)
-            if "steps" in message:
-                display_reasoning_trace(message["steps"])
-            # Action row: copy | regen | sources pill
-            _act_cols = st.columns([1, 1, 2, 10])
-            with _act_cols[0]:
-                copy_button(message["content"], f"hist_{id(message)}")
-            with _act_cols[1]:
-                _msg_idx = st.session_state.messages.index(message) if message in st.session_state.messages else -1
-                if st.button("🔄", key=f"regen_{id(message)}", help="Regenerate"):
-                    if _msg_idx > 0:
-                        st.session_state.messages.pop(_msg_idx)
-                        st.session_state["_regen_prompt"] = st.session_state.messages[_msg_idx - 1]["content"]
-                        st.rerun()
-            with _act_cols[2]:
-                if final_sources:
-                    with st.popover(f"🔗 {len(final_sources)} sources"):
-                        st.markdown(render_sources_panel(final_sources), unsafe_allow_html=True)
-            usage = message.get("token_usage", {})
-            timing = message.get("timing", {})
-            provider = message.get("vector_provider", "—")
-            total_ms = timing.get("total_ms", 0)
-            llm_ms = timing.get("llm_ms", 0)
-            vs_ms = timing.get("vector_search_ms", 0)
-            if usage.get("total_tokens", 0) > 0 or total_ms > 0:
-                _hist_model = message.get("model", "").split('/')[-1].replace(':free', '') or "—"
-                st.markdown(f"""
-                <div class="token-bar">
-                    <span class="prov">🤖 {_hist_model}</span>
-                    <span class="sep">|</span>
-                    <span class="prov">🗄️ {provider}</span>
-                    <span class="sep">|</span>
-                    <span>⏱️ Total <span class="tk">{total_ms:,.0f}ms</span></span>
-                    <span class="sep">|</span>
-                    <span>🤖 LLM <span class="tk">{llm_ms:,.0f}ms</span></span>
-                    <span class="sep">|</span>
-                    <span>🔍 VectorDB <span class="tk">{vs_ms:,.0f}ms</span></span>
-                    <span class="sep">|</span>
-                    <span>📥 In <span class="tk">{usage.get('prompt_tokens', 0):,}</span></span>
-                    <span class="sep">|</span>
-                    <span>📤 Out <span class="tk">{usage.get('completion_tokens', 0):,}</span></span>
-                    <span class="sep">|</span>
-                    <span>Σ <span class="tk">{usage.get('total_tokens', 0):,}</span></span>
-                    <span class="sep">|</span>
-                    <span>Calls <span class="tk">{usage.get('llm_calls', 0)}</span></span>
-                </div>
-                """, unsafe_allow_html=True)
-            # Audit panel (history replay)
-            msg_audit = message.get("audit")
-            if msg_audit:
-                with st.expander("🛡️ Audit Report", expanded=False):
-                    st.markdown(render_audit_panel(msg_audit), unsafe_allow_html=True)
-            # Validation panel (history replay)
-            msg_val = message.get("validation")
-            if msg_val:
-                with st.expander("✅ Validation Report", expanded=False):
-                    st.markdown(render_validation_panel(msg_val), unsafe_allow_html=True)
+if st.session_state.pdf_preview_active and st.session_state.pdf_preview_path:
+    pdf_col, chat_col = st.columns([1, 1], gap="medium")
+else:
+    pdf_col = None
+    chat_col = st.container()
 
-# Welcome state
-if not st.session_state.messages:
+# ---- PDF Preview Panel ----
+if pdf_col is not None:
+    with pdf_col:
+        _pdf_path = st.session_state.pdf_preview_path
+        _pdf_name = st.session_state.pdf_preview_filename or os.path.basename(_pdf_path)
+
+        # Header with filename and close button
+        _hdr_cols = st.columns([5, 1])
+        with _hdr_cols[0]:
+            st.markdown(f"""
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 0;">
+                <span style="font-size:1.2rem;">📄</span>
+                <span style="font-weight:600;font-size:0.9rem;color:#e2e8f0;">{_pdf_name}</span>
+                <span style="font-size:0.65rem;color:#818cf8;background:rgba(129,140,248,0.12);
+                    padding:2px 8px;border-radius:6px;font-weight:600;letter-spacing:0.03em;">PDF Preview</span>
+            </div>
+            """, unsafe_allow_html=True)
+        with _hdr_cols[1]:
+            if st.button("✕ Close", key="close_pdf_panel", use_container_width=True):
+                st.session_state.pdf_preview_active = False
+                st.session_state.pdf_preview_path = None
+                st.session_state.pdf_preview_filename = None
+                st.rerun()
+
+        # Render the PDF viewer
+        render_pdf_viewer(_pdf_path, height=720)
+
+        # Tip text
+        st.markdown("""
+        <div style="text-align:center;font-size:0.68rem;color:#636e80;padding:6px 0;">
+            💡 Select text and right-click → <strong style="color:#a5b4fc;">Ask AI about this</strong>
+        </div>
+        """, unsafe_allow_html=True)
+
+# ---- Chat Column ----
+with chat_col:
+    # Header
     st.markdown("""
-    <div class="welcome-grid">
-        <div class="welcome-card">
-            <div class="wicon">🌤️</div>
-            <div class="wtitle">Check Weather</div>
-            <div class="wdesc">What's the weather in Tokyo?</div>
-        </div>
-        <div class="welcome-card">
-            <div class="wicon">🧮</div>
-            <div class="wtitle">Calculate</div>
-            <div class="wdesc">What is sqrt(2025)?</div>
-        </div>
-        <div class="welcome-card">
-            <div class="wicon">🌐</div>
-            <div class="wtitle">Search the Web</div>
-            <div class="wdesc">Latest news about SpaceX</div>
-        </div>
-        <div class="welcome-card">
-            <div class="wicon">📖</div>
-            <div class="wtitle">Wikipedia</div>
-            <div class="wdesc">Tell me about quantum computing</div>
+    <div class="hero">
+        <h1>⚡ AI Agent</h1>
+        <div class="subtitle">Autonomous reasoning & tool execution — Multi-Model via OpenRouter</div>
+        <div class="badge-row">
+            <span class="hbadge">🌐 Web Search</span>
+            <span class="hbadge">🧮 Calculator</span>
+            <span class="hbadge">🌤️ Weather</span>
+            <span class="hbadge">📖 Wikipedia</span>
+            <span class="hbadge">🐍 Python</span>
+            <span class="hbadge">🔗 URL Reader</span>
+            <span class="hbadge">🕐 DateTime</span>
+            <span class="hbadge">📄 File Reader</span>
+            <span class="hbadge">📚 Doc Search</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
 
 # ============================================
-# Chat Input
+# Reasoning Trace Display
 # ============================================
-# Handle regeneration
-_regen = st.session_state.pop("_regen_prompt", None)
+    def display_reasoning_trace(steps: list):
+        with st.expander("🔍 View Reasoning Trace", expanded=False):
+            for step in steps:
+                if step["type"] == "tool_use":
+                    if step.get("thought"):
+                        st.markdown(f"""<div class="trace-step thought">
+                            <div class="trace-label thought">💭 Thought</div>
+                            {step['thought']}
+                        </div>""", unsafe_allow_html=True)
+
+                    icon = TOOL_ICONS.get(step['action'], '🔧')
+                    cached_chip = '<span class="cached-chip">⚡ CACHED</span>' if step.get("cached") else ""
+                    st.markdown(f"""<div class="trace-step action">
+                        <div class="trace-label action">⚡ Action</div>
+                        <span class="tool-chip">{icon} {step['action']}</span>{cached_chip}
+                        <br><code>{step['action_input']}</code>
+                    </div>""", unsafe_allow_html=True)
+
+                    if step.get("observation"):
+                        obs = step["observation"][:500]
+                        if len(step["observation"]) > 500:
+                            obs += "..."
+                        st.markdown(f"""<div class="trace-step observation">
+                            <div class="trace-label observation">👁️ Observation</div>
+                            <pre style="white-space:pre-wrap;font-size:0.78rem;color:#94a3b8;
+                                background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;
+                                margin-top:0.3rem;">{obs}</pre>
+                        </div>""", unsafe_allow_html=True)
+
+                    st.markdown(f'<div class="step-num">Step {step["iteration"]}</div>', unsafe_allow_html=True)
+
+                elif step["type"] in ("final_answer", "max_iterations"):
+                    cached_note = ""
+                    if step.get("cached"):
+                        cached_note = ' <span class="cached-chip">⚡ CACHED</span>'
+                    if step.get("thought"):
+                        st.markdown(f"""<div class="trace-step thought">
+                            <div class="trace-label thought">💭 Final Thought{cached_note}</div>
+                            {step['thought']}
+                        </div>""", unsafe_allow_html=True)
 
 
-if prompt := (_regen or st.chat_input("Ask me anything — I can search, calculate, check weather, read pages, and more...")):
-    if st.session_state.uploaded_file_path:
-        prompt += f"\n\n[Uploaded file available at: {st.session_state.uploaded_file_path}]"
+    # ============================================
+    # Chat Messages
+    # ============================================
+    for message in st.session_state.messages:
+        if message["role"] == "user":
+            with st.chat_message("user", avatar="👤"):
+                st.markdown(message["content"])
+        elif message["role"] == "assistant":
+            with st.chat_message("assistant", avatar="⚡"):
+                # Render with citations
+                msg_sources = message.get("sources", [])
+                cited_html, final_sources = render_citations(message["content"], msg_sources)
+                if final_sources:
+                    st.markdown(cited_html, unsafe_allow_html=True)
+                else:
+                    st.markdown(cited_html)
+                if "steps" in message:
+                    display_reasoning_trace(message["steps"])
+                # Action row: copy | regen | sources pill
+                _act_cols = st.columns([1, 1, 2, 10])
+                with _act_cols[0]:
+                    copy_button(message["content"], f"hist_{id(message)}")
+                with _act_cols[1]:
+                    _msg_idx = st.session_state.messages.index(message) if message in st.session_state.messages else -1
+                    if st.button("🔄", key=f"regen_{id(message)}", help="Regenerate"):
+                        if _msg_idx > 0:
+                            st.session_state.messages.pop(_msg_idx)
+                            st.session_state["_regen_prompt"] = st.session_state.messages[_msg_idx - 1]["content"]
+                            st.rerun()
+                with _act_cols[2]:
+                    if final_sources:
+                        with st.popover(f"🔗 {len(final_sources)} sources"):
+                            st.markdown(render_sources_panel(final_sources), unsafe_allow_html=True)
+                usage = message.get("token_usage", {})
+                timing = message.get("timing", {})
+                provider = message.get("vector_provider", "—")
+                total_ms = timing.get("total_ms", 0)
+                llm_ms = timing.get("llm_ms", 0)
+                vs_ms = timing.get("vector_search_ms", 0)
+                if usage.get("total_tokens", 0) > 0 or total_ms > 0:
+                    _hist_model = message.get("model", "").split('/')[-1].replace(':free', '') or "—"
+                    st.markdown(f"""
+                    <div class="token-bar">
+                        <span class="prov">🤖 {_hist_model}</span>
+                        <span class="sep">|</span>
+                        <span class="prov">🗄️ {provider}</span>
+                        <span class="sep">|</span>
+                        <span>⏱️ Total <span class="tk">{total_ms:,.0f}ms</span></span>
+                        <span class="sep">|</span>
+                        <span>🤖 LLM <span class="tk">{llm_ms:,.0f}ms</span></span>
+                        <span class="sep">|</span>
+                        <span>🔍 VectorDB <span class="tk">{vs_ms:,.0f}ms</span></span>
+                        <span class="sep">|</span>
+                        <span>📥 In <span class="tk">{usage.get('prompt_tokens', 0):,}</span></span>
+                        <span class="sep">|</span>
+                        <span>📤 Out <span class="tk">{usage.get('completion_tokens', 0):,}</span></span>
+                        <span class="sep">|</span>
+                        <span>Σ <span class="tk">{usage.get('total_tokens', 0):,}</span></span>
+                        <span class="sep">|</span>
+                        <span>Calls <span class="tk">{usage.get('llm_calls', 0)}</span></span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                # Audit panel (history replay)
+                msg_audit = message.get("audit")
+                if msg_audit:
+                    with st.expander("🛡️ Audit Report", expanded=False):
+                        st.markdown(render_audit_panel(msg_audit), unsafe_allow_html=True)
+                # Validation panel (history replay)
+                msg_val = message.get("validation")
+                if msg_val:
+                    with st.expander("✅ Validation Report", expanded=False):
+                        st.markdown(render_validation_panel(msg_val), unsafe_allow_html=True)
 
-    if not _regen:
-        st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="👤"):
-        st.markdown(prompt)
+    # Welcome state
+    if not st.session_state.messages:
+        st.markdown("""
+        <div class="welcome-grid">
+            <div class="welcome-card">
+                <div class="wicon">🌤️</div>
+                <div class="wtitle">Check Weather</div>
+                <div class="wdesc">What's the weather in Tokyo?</div>
+            </div>
+            <div class="welcome-card">
+                <div class="wicon">🧮</div>
+                <div class="wtitle">Calculate</div>
+                <div class="wdesc">What is sqrt(2025)?</div>
+            </div>
+            <div class="welcome-card">
+                <div class="wicon">🌐</div>
+                <div class="wtitle">Search the Web</div>
+                <div class="wdesc">Latest news about SpaceX</div>
+            </div>
+            <div class="welcome-card">
+                <div class="wicon">📖</div>
+                <div class="wtitle">Wikipedia</div>
+                <div class="wdesc">Tell me about quantum computing</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    with st.chat_message("assistant", avatar="⚡"):
-        try:
-            # Always skip cache on regeneration
-            _force_skip = True if _regen else (not st.session_state.cache_enabled)
 
-            full_answer = ""
-            result = None
-            audit_data = None
-            validation_data = None
-            final_sources = []
+    # ============================================
+    # File Upload — 📎 Attach Button Area
+    # ============================================
+    _upload_cols = st.columns([1, 12])
+    with _upload_cols[0]:
+        _show_upload = st.popover("📎", help="Attach a file (PDF or TXT)")
+    with _show_upload:
+        st.markdown("**📁 Upload Document**")
+        st.caption("Upload a PDF or TXT file to index for RAG search and preview.")
+        uploaded_file = st.file_uploader(
+            "Upload", type=["txt", "pdf"],
+            label_visibility="collapsed",
+            key="main_file_uploader",
+        )
+        if uploaded_file:
+            upload_dir = "uploads"
+            os.makedirs(upload_dir, exist_ok=True)
+            file_path = os.path.join(upload_dir, uploaded_file.name)
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            st.session_state.uploaded_file_path = file_path
 
-            if st.session_state.streaming_enabled:
-                # ==========================================
-                # STREAMING MODE — live progress + typing
-                # ==========================================
-                status = st.status("⚡ Starting...", expanded=True)
-                answer_container = st.empty()
-                _step_count = 0
-
-                for event in st.session_state.agent.run_stream(
-                    user_input=prompt,
-                    session_id=st.session_state.session_id,
-                    skip_cache=_force_skip,
-                    model=st.session_state.selected_model,
-                    auditor_model=st.session_state.selected_auditor_model,
-                ):
-                    if event.type == "thinking":
-                        _iter = event.data.get("iteration", "")
-                        _status_msg = event.data.get("status", "")
-                        if _status_msg:
-                            status.update(label=f"⏳ {_status_msg}", state="running")
-                        elif _iter:
-                            _step_count = _iter
-                            status.update(label=f"🤔 Thinking... (step {_iter})", state="running")
-
-                    elif event.type == "tool_call":
-                        tool_name = event.data.get("tool", "?")
-                        tool_input = event.data.get("input", "")
-                        thought = event.data.get("thought", "")
-                        status.update(label=f"🔧 Using {tool_name}...", state="running")
-                        if thought:
-                            status.write(f"💭 *{thought[:150]}*")
-                        status.write(f"**Tool**: `{tool_name}`")
-                        if tool_input:
-                            status.write(f"**Input**: {tool_input[:200]}")
-
-                    elif event.type == "tool_result":
-                        output = event.data.get("output", "")
-                        cached = event.data.get("cached", False)
-                        cache_tag = " ⚡ (cached)" if cached else ""
-                        status.write(f"**Result{cache_tag}**: {output[:150]}...")
-                        status.write("---")
-
-                    elif event.type == "answer_start":
-                        thought = event.data.get("thought", "")
-                        label = f"✅ Done reasoning ({_step_count} steps)" if _step_count else "✅ Done reasoning"
-                        status.update(label=label, state="complete", expanded=False)
-                        if thought:
-                            status.write(f"💭 *{thought[:200]}*")
-
-                    elif event.type == "answer_token":
-                        full_answer += event.data.get("token", "")
-                        answer_container.markdown(full_answer + "▌")
-
-                    elif event.type == "answer_done":
-                        full_answer = event.data.get("answer", full_answer)
-                        if event.data.get("cached"):
-                            answer_container.markdown(f'<span class="cached-chip" style="margin-bottom:0.5rem;display:inline-flex;">⚡ Served from cache</span>\n\n{full_answer}', unsafe_allow_html=True)
-                        else:
-                            answer_container.markdown(full_answer)
-
-                    elif event.type == "audit":
-                        audit_data = event.data.get("data")
-
-                    elif event.type == "validation":
-                        validation_data = event.data.get("data")
-
-                    elif event.type == "error":
-                        st.error(f"❌ {event.data.get('message', 'Unknown error')}")
-
-                    elif event.type == "done":
-                        result = event.data.get("result", {})
-
+            # Index into vector store for RAG
+            if st.session_state.agent.doc_store.is_available:
+                from tools.file_tool import read_file
+                text = read_file(file_path)
+                chunks = st.session_state.agent.doc_store.add_document(uploaded_file.name, text)
+                st.session_state.indexed_docs[uploaded_file.name] = chunks
+                st.success(f"✅ {uploaded_file.name} — indexed {chunks} chunks")
             else:
-                # ==========================================
-                # BLOCKING MODE — classic spinner + instant
-                # ==========================================
-                with st.spinner("⚡ Reasoning..."):
-                    result = st.session_state.agent.run(
+                st.success(f"✅ {uploaded_file.name}")
+
+            # Auto-open PDF preview for PDF files
+            if uploaded_file.name.lower().endswith('.pdf'):
+                st.session_state.pdf_preview_active = True
+                st.session_state.pdf_preview_path = file_path
+                st.session_state.pdf_preview_filename = uploaded_file.name
+
+    # Show currently uploaded file notification
+    if st.session_state.uploaded_file_path:
+        _fname = os.path.basename(st.session_state.uploaded_file_path)
+        _is_pdf = _fname.lower().endswith('.pdf')
+        _preview_html = ""
+        if _is_pdf and not st.session_state.pdf_preview_active:
+            _preview_html = "  •  <span style='color:#a5b4fc;font-size:0.68rem;cursor:pointer;'>👁️ Preview</span>"
+        st.markdown(f"""
+        <div class="upload-pill">📄 {_fname}{_preview_html}</div>
+        """, unsafe_allow_html=True)
+
+    # ============================================
+    # PDF Query from Selection
+    # ============================================
+    # Streamlit-native text query for PDF content
+    if st.session_state.pdf_preview_active:
+        with st.expander("📄 Ask about PDF content", expanded=False):
+            st.caption("Select text from the PDF preview, copy it, and paste here to ask the AI about it.")
+            _pdf_text_input = st.text_area(
+                "Selected text from PDF",
+                placeholder="Paste selected text from the PDF here...",
+                key="pdf_text_query_input",
+                height=80,
+                label_visibility="collapsed",
+            )
+            _query_mode_cols = st.columns(4)
+            with _query_mode_cols[0]:
+                if st.button("🤖 Ask AI", key="pdf_ask_btn", use_container_width=True, disabled=not _pdf_text_input):
+                    st.session_state.pdf_query_text = get_query_from_selection(_pdf_text_input, "ask")
+                    st.rerun()
+            with _query_mode_cols[1]:
+                if st.button("💡 Explain", key="pdf_explain_btn", use_container_width=True, disabled=not _pdf_text_input):
+                    st.session_state.pdf_query_text = get_query_from_selection(_pdf_text_input, "explain")
+                    st.rerun()
+            with _query_mode_cols[2]:
+                if st.button("📝 Summarize", key="pdf_summarize_btn", use_container_width=True, disabled=not _pdf_text_input):
+                    st.session_state.pdf_query_text = get_query_from_selection(_pdf_text_input, "summarize")
+                    st.rerun()
+            with _query_mode_cols[3]:
+                if st.button("📖 Define", key="pdf_define_btn", use_container_width=True, disabled=not _pdf_text_input):
+                    st.session_state.pdf_query_text = get_query_from_selection(_pdf_text_input, "define")
+                    st.rerun()
+
+    # Show active PDF query pill
+    if st.session_state.pdf_query_text:
+        _pq = st.session_state.pdf_query_text
+        _preview_text = _pq[:150] + "..." if len(_pq) > 150 else _pq
+        st.markdown(f"""
+        <div class="pdf-query-pill">
+            <span class="pq-icon">📄</span>
+            <div class="pq-content">
+                <div class="pq-label">Query from PDF selection</div>
+                <div class="pq-text">{_preview_text}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        _pq_cols = st.columns([3, 1])
+        with _pq_cols[1]:
+            if st.button("✕ Clear", key="clear_pdf_query"):
+                st.session_state.pdf_query_text = None
+                st.rerun()
+
+    # ============================================
+    # Chat Input
+    # ============================================
+    # Handle regeneration
+    _regen = st.session_state.pop("_regen_prompt", None)
+
+    # Check for PDF query to use as default
+    _pdf_q = st.session_state.pop("pdf_query_text", None) if st.session_state.get("pdf_query_text") else None
+
+    if prompt := (_regen or _pdf_q or st.chat_input("Ask me anything — I can search, calculate, check weather, read pages, and more...")):
+        if st.session_state.uploaded_file_path:
+            prompt += f"\n\n[Uploaded file available at: {st.session_state.uploaded_file_path}]"
+
+        # Clear pdf query after using it
+        st.session_state.pdf_query_text = None
+
+        if not _regen:
+            st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user", avatar="👤"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant", avatar="⚡"):
+            try:
+                # Always skip cache on regeneration
+                _force_skip = True if _regen else (not st.session_state.cache_enabled)
+
+                full_answer = ""
+                result = None
+                audit_data = None
+                validation_data = None
+                final_sources = []
+
+                if st.session_state.streaming_enabled:
+                    # ==========================================
+                    # STREAMING MODE — live progress + typing
+                    # ==========================================
+                    status = st.status("⚡ Starting...", expanded=True)
+                    answer_container = st.empty()
+                    _step_count = 0
+
+                    for event in st.session_state.agent.run_stream(
                         user_input=prompt,
                         session_id=st.session_state.session_id,
                         skip_cache=_force_skip,
                         model=st.session_state.selected_model,
                         auditor_model=st.session_state.selected_auditor_model,
-                    )
-                    full_answer = result["final_answer"]
-                    audit_data = result.get("audit")
-                    validation_data = result.get("validation")
+                    ):
+                        if event.type == "thinking":
+                            _iter = event.data.get("iteration", "")
+                            _status_msg = event.data.get("status", "")
+                            if _status_msg:
+                                status.update(label=f"⏳ {_status_msg}", state="running")
+                            elif _iter:
+                                _step_count = _iter
+                                status.update(label=f"🤔 Thinking... (step {_iter})", state="running")
 
-                    if result.get("cached"):
-                        st.markdown('<span class="cached-chip" style="margin-bottom:0.5rem;display:inline-flex;">⚡ Served from cache</span>', unsafe_allow_html=True)
+                        elif event.type == "tool_call":
+                            tool_name = event.data.get("tool", "?")
+                            tool_input = event.data.get("input", "")
+                            thought = event.data.get("thought", "")
+                            status.update(label=f"🔧 Using {tool_name}...", state="running")
+                            if thought:
+                                status.write(f"💭 *{thought[:150]}*")
+                            status.write(f"**Tool**: `{tool_name}`")
+                            if tool_input:
+                                status.write(f"**Input**: {tool_input[:200]}")
 
-                    # Render answer with inline citations
-                    sources = result.get("sources", [])
-                    cited_html, final_sources = render_citations(full_answer, sources)
-                    if final_sources:
-                        st.markdown(cited_html, unsafe_allow_html=True)
-                    else:
-                        st.markdown(cited_html)
+                        elif event.type == "tool_result":
+                            output = event.data.get("output", "")
+                            cached = event.data.get("cached", False)
+                            cache_tag = " ⚡ (cached)" if cached else ""
+                            status.write(f"**Result{cache_tag}**: {output[:150]}...")
+                            status.write("---")
 
-            # ==========================================
-            # SHARED: Post-render (metrics, audit, etc.)
-            # ==========================================
-            if result:
-                # For streaming mode, apply citations
-                if st.session_state.streaming_enabled:
-                    sources = result.get("sources", [])
-                    cited_html, final_sources = render_citations(full_answer, sources)
-                    if final_sources:
-                        answer_container.markdown(cited_html, unsafe_allow_html=True)
+                        elif event.type == "answer_start":
+                            thought = event.data.get("thought", "")
+                            label = f"✅ Done reasoning ({_step_count} steps)" if _step_count else "✅ Done reasoning"
+                            status.update(label=label, state="complete", expanded=False)
+                            if thought:
+                                status.write(f"💭 *{thought[:200]}*")
 
-                if result["steps"]:
-                    display_reasoning_trace(result["steps"])
+                        elif event.type == "answer_token":
+                            full_answer += event.data.get("token", "")
+                            answer_container.markdown(full_answer + "▌")
 
-                # Action row: copy | regen | sources pill
-                _new_cols = st.columns([1, 1, 2, 10])
-                with _new_cols[0]:
-                    copy_button(full_answer, f"new_{len(st.session_state.messages)}")
-                with _new_cols[1]:
-                    if st.button("🔄", key=f"regen_new_{len(st.session_state.messages)}", help="Regenerate"):
-                        st.session_state["_regen_prompt"] = prompt
-                        st.rerun()
-                with _new_cols[2]:
-                    if final_sources:
-                        with st.popover(f"🔗 {len(final_sources)} sources"):
-                            st.markdown(render_sources_panel(final_sources), unsafe_allow_html=True)
+                        elif event.type == "answer_done":
+                            full_answer = event.data.get("answer", full_answer)
+                            if event.data.get("cached"):
+                                answer_container.markdown(f'<span class="cached-chip" style="margin-bottom:0.5rem;display:inline-flex;">⚡ Served from cache</span>\n\n{full_answer}', unsafe_allow_html=True)
+                            else:
+                                answer_container.markdown(full_answer)
 
-                # Comprehensive metrics display
-                usage = result.get("token_usage", {})
-                timing = result.get("timing", {})
-                provider = result.get("vector_provider", "—")
-                total_ms = timing.get("total_ms", 0)
-                llm_ms = timing.get("llm_ms", 0)
-                vs_ms = timing.get("vector_search_ms", 0)
+                        elif event.type == "audit":
+                            audit_data = event.data.get("data")
 
-                _model_short = st.session_state.selected_model.replace('groq::', '').replace('claude::', '').split('/')[-1].replace(':free', '')
-                st.markdown(f"""
-                <div class="token-bar">
-                    <span class="prov">🤖 {_model_short}</span>
-                    <span class="sep">|</span>
-                    <span class="prov">🗄️ {provider}</span>
-                    <span class="sep">|</span>
-                    <span>⏱️ Total <span class="tk">{total_ms:,.0f}ms</span></span>
-                    <span class="sep">|</span>
-                    <span>🤖 LLM <span class="tk">{llm_ms:,.0f}ms</span></span>
-                    <span class="sep">|</span>
-                    <span>🔍 VectorDB <span class="tk">{vs_ms:,.0f}ms</span></span>
-                    <span class="sep">|</span>
-                    <span>📥 In <span class="tk">{usage.get('prompt_tokens', 0):,}</span></span>
-                    <span class="sep">|</span>
-                    <span>📤 Out <span class="tk">{usage.get('completion_tokens', 0):,}</span></span>
-                    <span class="sep">|</span>
-                    <span>Σ <span class="tk">{usage.get('total_tokens', 0):,}</span></span>
-                    <span class="sep">|</span>
-                    <span>Calls <span class="tk">{usage.get('llm_calls', 0)}</span></span>
-                </div>
-                """, unsafe_allow_html=True)
+                        elif event.type == "validation":
+                            validation_data = event.data.get("data")
 
-                # Audit panel
-                audit_data = audit_data or result.get("audit")
-                if audit_data:
-                    with st.expander("🛡️ Audit Report", expanded=True):
-                        st.markdown(render_audit_panel(audit_data), unsafe_allow_html=True)
+                        elif event.type == "error":
+                            st.error(f"❌ {event.data.get('message', 'Unknown error')}")
 
-                # Validation panel
-                validation_data = validation_data or result.get("validation")
-                if validation_data:
-                    with st.expander("✅ Validation Report", expanded=True):
-                        st.markdown(render_validation_panel(validation_data), unsafe_allow_html=True)
+                        elif event.type == "done":
+                            result = event.data.get("result", {})
 
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": full_answer,
-                    "steps": result["steps"],
-                    "token_usage": usage,
-                    "timing": timing,
-                    "vector_provider": provider,
-                    "sources": final_sources,
-                    "audit": audit_data,
-                    "validation": validation_data,
-                    "model": st.session_state.selected_model,
-                })
-        except ValueError as e:
-            # Close the status panel if it exists (streaming mode)
-            try:
-                status.update(label="❌ Error", state="error", expanded=False)
-            except Exception:
-                pass
-            st.error(str(e))
-            st.info("💡 Get a free API key at https://openrouter.ai/keys")
-        except Exception as e:
-            # Close the status panel if it exists (streaming mode)
-            try:
-                status.update(label="❌ Error", state="error", expanded=False)
-            except Exception:
-                pass
-            st.error(f"❌ {str(e)}")
+                else:
+                    # ==========================================
+                    # BLOCKING MODE — classic spinner + instant
+                    # ==========================================
+                    with st.spinner("⚡ Reasoning..."):
+                        result = st.session_state.agent.run(
+                            user_input=prompt,
+                            session_id=st.session_state.session_id,
+                            skip_cache=_force_skip,
+                            model=st.session_state.selected_model,
+                            auditor_model=st.session_state.selected_auditor_model,
+                        )
+                        full_answer = result["final_answer"]
+                        audit_data = result.get("audit")
+                        validation_data = result.get("validation")
 
-st.markdown('<div class="footer">Built with ❤️ — AI Agent • Multi-Model via OpenRouter • PostgreSQL + Pinecone/Weaviate/Qdrant + Redis</div>', unsafe_allow_html=True)
+                        if result.get("cached"):
+                            st.markdown('<span class="cached-chip" style="margin-bottom:0.5rem;display:inline-flex;">⚡ Served from cache</span>', unsafe_allow_html=True)
+
+                        # Render answer with inline citations
+                        sources = result.get("sources", [])
+                        cited_html, final_sources = render_citations(full_answer, sources)
+                        if final_sources:
+                            st.markdown(cited_html, unsafe_allow_html=True)
+                        else:
+                            st.markdown(cited_html)
+
+                # ==========================================
+                # SHARED: Post-render (metrics, audit, etc.)
+                # ==========================================
+                if result:
+                    # For streaming mode, apply citations
+                    if st.session_state.streaming_enabled:
+                        sources = result.get("sources", [])
+                        cited_html, final_sources = render_citations(full_answer, sources)
+                        if final_sources:
+                            answer_container.markdown(cited_html, unsafe_allow_html=True)
+
+                    if result["steps"]:
+                        display_reasoning_trace(result["steps"])
+
+                    # Action row: copy | regen | sources pill
+                    _new_cols = st.columns([1, 1, 2, 10])
+                    with _new_cols[0]:
+                        copy_button(full_answer, f"new_{len(st.session_state.messages)}")
+                    with _new_cols[1]:
+                        if st.button("🔄", key=f"regen_new_{len(st.session_state.messages)}", help="Regenerate"):
+                            st.session_state["_regen_prompt"] = prompt
+                            st.rerun()
+                    with _new_cols[2]:
+                        if final_sources:
+                            with st.popover(f"🔗 {len(final_sources)} sources"):
+                                st.markdown(render_sources_panel(final_sources), unsafe_allow_html=True)
+
+                    # Comprehensive metrics display
+                    usage = result.get("token_usage", {})
+                    timing = result.get("timing", {})
+                    provider = result.get("vector_provider", "—")
+                    total_ms = timing.get("total_ms", 0)
+                    llm_ms = timing.get("llm_ms", 0)
+                    vs_ms = timing.get("vector_search_ms", 0)
+
+                    _model_short = st.session_state.selected_model.replace('groq::', '').replace('claude::', '').split('/')[-1].replace(':free', '')
+                    st.markdown(f"""
+                    <div class="token-bar">
+                        <span class="prov">🤖 {_model_short}</span>
+                        <span class="sep">|</span>
+                        <span class="prov">🗄️ {provider}</span>
+                        <span class="sep">|</span>
+                        <span>⏱️ Total <span class="tk">{total_ms:,.0f}ms</span></span>
+                        <span class="sep">|</span>
+                        <span>🤖 LLM <span class="tk">{llm_ms:,.0f}ms</span></span>
+                        <span class="sep">|</span>
+                        <span>🔍 VectorDB <span class="tk">{vs_ms:,.0f}ms</span></span>
+                        <span class="sep">|</span>
+                        <span>📥 In <span class="tk">{usage.get('prompt_tokens', 0):,}</span></span>
+                        <span class="sep">|</span>
+                        <span>📤 Out <span class="tk">{usage.get('completion_tokens', 0):,}</span></span>
+                        <span class="sep">|</span>
+                        <span>Σ <span class="tk">{usage.get('total_tokens', 0):,}</span></span>
+                        <span class="sep">|</span>
+                        <span>Calls <span class="tk">{usage.get('llm_calls', 0)}</span></span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # Audit panel
+                    audit_data = audit_data or result.get("audit")
+                    if audit_data:
+                        with st.expander("🛡️ Audit Report", expanded=True):
+                            st.markdown(render_audit_panel(audit_data), unsafe_allow_html=True)
+
+                    # Validation panel
+                    validation_data = validation_data or result.get("validation")
+                    if validation_data:
+                        with st.expander("✅ Validation Report", expanded=True):
+                            st.markdown(render_validation_panel(validation_data), unsafe_allow_html=True)
+
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": full_answer,
+                        "steps": result["steps"],
+                        "token_usage": usage,
+                        "timing": timing,
+                        "vector_provider": provider,
+                        "sources": final_sources,
+                        "audit": audit_data,
+                        "validation": validation_data,
+                        "model": st.session_state.selected_model,
+                    })
+            except ValueError as e:
+                # Close the status panel if it exists (streaming mode)
+                try:
+                    status.update(label="❌ Error", state="error", expanded=False)
+                except Exception:
+                    pass
+                st.error(str(e))
+                st.info("💡 Get a free API key at https://openrouter.ai/keys")
+            except Exception as e:
+                # Close the status panel if it exists (streaming mode)
+                try:
+                    status.update(label="❌ Error", state="error", expanded=False)
+                except Exception:
+                    pass
+                st.error(f"❌ {str(e)}")
+
+    st.markdown('<div class="footer">Built with ❤️ — AI Agent • Multi-Model via OpenRouter • PostgreSQL + Pinecone/Weaviate/Qdrant + Redis</div>', unsafe_allow_html=True)

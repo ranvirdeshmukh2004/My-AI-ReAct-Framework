@@ -86,6 +86,17 @@ Every response is independently evaluated by two quality-checking systems:
 
 ---
 
+## 📄 Interactive PDF Preview
+
+The frontend features a custom-built, split-pane PDF viewer that tightly integrates with the AI agent:
+- **Side-by-side Layout**: Uploaded PDFs open in a resizable left panel, keeping the chat active on the right.
+- **Contextual Querying**: Select any text in the PDF, right-click, and choose to **Ask AI**, **Explain**, **Summarize**, or **Define**.
+- **Streamlit-Native Fallback**: An interactive "Ask about PDF content" expander allows seamless copy-pasting for environments where right-click context menus are restricted.
+- **Full PDF Capabilities**: Zoom, fit-to-width, page navigation, and in-document search (Ctrl+F).
+- **RAG Integration**: Any uploaded PDF is automatically indexed into the selected Vector DB (Pinecone/Weaviate/Qdrant) and available for semantic search via the `doc_search` tool.
+
+---
+
 ## 🛠️ Tools (9)
 
 | Tool | Description | API |
