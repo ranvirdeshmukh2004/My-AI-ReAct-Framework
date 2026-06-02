@@ -332,162 +332,183 @@ st.markdown("""
 .agree-partial { background: rgba(251,191,36,0.15); color: #fbbf24; }
 .agree-contradiction { background: rgba(248,113,113,0.15); color: #f87171; }
 /* ============================================
-   PDF Preview & Split Layout
+   New UI Design: Chat & PDF Layout
    ============================================ */
 
-/* PDF preview panel container */
-.pdf-preview-panel {
-    background: rgba(255,255,255,0.02);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 12px;
-    overflow: hidden;
-    height: calc(100vh - 120px);
-    display: flex;
-    flex-direction: column;
+/* Chat Container Background (Starry deep dark) */
+.stApp {
+    background: radial-gradient(circle at 80% 50%, #2a1b38 0%, #1a1b26 40%, #15161e 100%);
+    background-image: 
+        radial-gradient(2px 2px at 20px 30px, #eee, rgba(0,0,0,0)),
+        radial-gradient(2px 2px at 40px 70px, #fff, rgba(0,0,0,0)),
+        radial-gradient(1px 1px at 90px 40px, #fff, rgba(0,0,0,0)),
+        radial-gradient(circle at 80% 50%, rgba(60, 30, 80, 0.4) 0%, #1a1b26 50%, #15161e 100%);
+    background-repeat: repeat, repeat, repeat, no-repeat;
+    background-size: 200px 200px, 250px 250px, 150px 150px, 100% 100%;
 }
 
-.pdf-preview-header {
+/* Top Toolbar */
+.top-toolbar {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 14px;
-    background: rgba(255,255,255,0.03);
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-}
-
-.pdf-preview-header .file-info {
-    display: flex;
-    align-items: center;
+    justify-content: center;
     gap: 8px;
+    padding: 10px 0;
+    margin-bottom: 20px;
 }
-
-.pdf-preview-header .file-name {
-    font-weight: 600;
-    font-size: 0.85rem;
-    color: #e2e8f0;
-}
-
-.pdf-preview-header .file-badge {
-    font-size: 0.65rem;
-    color: #818cf8;
-    background: rgba(129,140,248,0.12);
-    padding: 2px 8px;
-    border-radius: 6px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-}
-
-/* Attach button */
-.attach-area {
-    display: flex;
-    align-items: center;
-    gap: 0;
-}
-
-.attach-btn {
-    background: rgba(255,255,255,0.04);
+.tb-pill {
+    background: rgba(30, 33, 43, 0.8);
     border: 1px solid rgba(255,255,255,0.08);
-    border-right: none;
-    border-radius: 10px 0 0 10px;
-    color: #818cf8;
-    cursor: pointer;
-    padding: 8px 12px;
-    font-size: 1.1rem;
-    transition: all 0.15s ease;
-    display: inline-flex;
-    align-items: center;
-}
-.attach-btn:hover {
-    background: rgba(129,140,248,0.12);
-    color: #a5b4fc;
-}
-
-/* Upload notification pill */
-.upload-pill {
+    border-radius: 6px;
+    color: #a9b1d6;
+    font-size: 0.75rem;
+    padding: 6px 12px;
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 14px;
-    background: linear-gradient(135deg, rgba(52,211,153,0.1), rgba(52,211,153,0.05));
-    border: 1px solid rgba(52,211,153,0.2);
-    border-radius: 8px;
-    font-size: 0.75rem;
-    color: #34d399;
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-    animation: fadeIn 0.3s ease;
+    cursor: pointer;
+    transition: all 0.2s;
 }
+.tb-pill:hover { background: rgba(255,255,255,0.1); color: #fff; }
 
-.preview-btn {
+/* Attached PDF Pill (Green) */
+.upload-pill {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: #0f2922;
+    border: 1px solid #1a4d3e;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+.upload-pill-content {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.upload-pill-title {
+    color: #4ade80;
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.upload-pill-desc {
+    color: #059669;
+    font-size: 0.75rem;
+}
+.upload-pill-remove {
+    color: #34d399;
+    font-size: 0.75rem;
+    cursor: pointer;
+    background: none;
+    border: none;
+}
+.upload-pill-remove:hover { color: #fff; }
+
+/* Custom Chat Input Pill */
+.custom-chat-input-container {
+    background: #24283b;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 24px;
+    padding: 8px 16px;
+    display: flex;
+    flex-direction: column;
+    margin-top: 1rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.chat-input-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.chat-input-box {
+    background: transparent;
+    border: none;
+    color: #c0caf5;
+    flex: 1;
+    font-size: 0.9rem;
+    padding: 8px 0;
+    outline: none;
+}
+.chat-input-box::placeholder { color: #565f89; }
+.chat-input-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+}
+.cib-left { display: flex; gap: 8px; }
+.cib-right { display: flex; gap: 8px; align-items: center; }
+
+.cib-btn {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #a9b1d6;
+    border-radius: 16px;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 3px 10px;
-    background: rgba(129,140,248,0.1);
-    border: 1px solid rgba(129,140,248,0.2);
-    border-radius: 6px;
-    color: #a5b4fc;
-    font-size: 0.68rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    text-decoration: none;
 }
-.preview-btn:hover {
-    background: rgba(129,140,248,0.2);
-    border-color: rgba(129,140,248,0.35);
-    color: #c7d2fe;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-4px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-/* Query from PDF selection pill */
-.pdf-query-pill {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 10px 14px;
-    background: linear-gradient(135deg, rgba(129,140,248,0.08), rgba(192,132,252,0.06));
-    border: 1px solid rgba(129,140,248,0.2);
-    border-radius: 10px;
-    margin-bottom: 0.6rem;
-    animation: fadeIn 0.3s ease;
-}
-
-.pdf-query-pill .pq-icon { font-size: 1rem; flex-shrink: 0; padding-top: 1px; }
-
-.pdf-query-pill .pq-content { flex: 1; }
-
-.pdf-query-pill .pq-label {
-    font-size: 0.68rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #818cf8;
-    margin-bottom: 3px;
-}
-
-.pdf-query-pill .pq-text {
-    font-size: 0.78rem;
-    color: #cbd5e1;
-    line-height: 1.45;
-    font-style: italic;
-}
-
-.pdf-query-pill .pq-dismiss {
-    background: none;
+.cib-btn:hover { background: rgba(255,255,255,0.1); }
+.cib-btn-primary {
+    background: #818cf8;
+    color: #fff;
     border: none;
-    color: #636e80;
-    cursor: pointer;
-    font-size: 0.8rem;
-    padding: 2px 4px;
-    border-radius: 4px;
-    transition: all 0.15s;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
-.pdf-query-pill .pq-dismiss:hover { color: #f87171; background: rgba(248,113,113,0.12); }
+
+/* Custom styling for default Streamlit chat input */
+[data-testid="stChatInput"] { 
+    background: #24283b !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 24px !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4) !important;
+}
+[data-testid="stChatInput"] textarea {
+    color: #c0caf5 !important;
+}
+
+/* PDF Preview Panel specific styles */
+.pdf-preview-panel {
+    background: #1e212b;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    overflow: hidden;
+    height: calc(100vh - 80px);
+}
+.pdf-header-custom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #1a1c23;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.pdf-header-custom .title { color: #c0caf5; font-size: 0.85rem; font-weight: 600; }
+.pdf-header-custom .actions { display: flex; gap: 8px; }
+.pdf-action-btn {
+    background: transparent;
+    border: none;
+    color: #a9b1d6;
+    font-size: 0.75rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.pdf-action-btn:hover { color: #fff; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1284,23 +1305,24 @@ if pdf_col is not None:
         _pdf_path = st.session_state.pdf_preview_path
         _pdf_name = st.session_state.pdf_preview_filename or os.path.basename(_pdf_path)
 
-        # Header with filename and close button
-        _hdr_cols = st.columns([5, 1])
-        with _hdr_cols[0]:
-            st.markdown(f"""
-            <div style="display:flex;align-items:center;gap:8px;padding:6px 0;">
-                <span style="font-size:1.2rem;">📄</span>
-                <span style="font-weight:600;font-size:0.9rem;color:#e2e8f0;">{_pdf_name}</span>
-                <span style="font-size:0.65rem;color:#818cf8;background:rgba(129,140,248,0.12);
-                    padding:2px 8px;border-radius:6px;font-weight:600;letter-spacing:0.03em;">PDF Preview</span>
+        # Custom Header matching screenshot
+        st.markdown(f"""
+        <div class="pdf-header-custom">
+            <div class="title">{_pdf_name}</div>
+            <div class="actions">
+                <button class="pdf-action-btn">✂️ Snip</button>
+                <button class="pdf-action-btn" onclick="window.parent.document.querySelector('#hidden_hide_btn_wrapper button').click()">👁️ Hide</button>
             </div>
-            """, unsafe_allow_html=True)
-        with _hdr_cols[1]:
-            if st.button("✕ Close", key="close_pdf_panel", use_container_width=True):
-                st.session_state.pdf_preview_active = False
-                st.session_state.pdf_preview_path = None
-                st.session_state.pdf_preview_filename = None
-                st.rerun()
+        </div>
+        """, unsafe_allow_html=True)
+        # Invisible button to handle hide action
+        st.markdown('<div id="hidden_hide_btn_wrapper" style="display:none;">', unsafe_allow_html=True)
+        if st.button("Hide", key="close_pdf_panel_hidden", help="Hide PDF Preview"):
+            st.session_state.pdf_preview_active = False
+            st.session_state.pdf_preview_path = None
+            st.session_state.pdf_preview_filename = None
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
         # Render the PDF viewer
         render_pdf_viewer(_pdf_path, height=720)
@@ -1315,23 +1337,43 @@ if pdf_col is not None:
 # ---- Chat Column ----
 with chat_col:
     # Header
+    # Custom UI Header (replaces hero)
     st.markdown("""
-    <div class="hero">
-        <h1>⚡ AI Agent</h1>
-        <div class="subtitle">Autonomous reasoning & tool execution — Multi-Model via OpenRouter</div>
-        <div class="badge-row">
-            <span class="hbadge">🌐 Web Search</span>
-            <span class="hbadge">🧮 Calculator</span>
-            <span class="hbadge">🌤️ Weather</span>
-            <span class="hbadge">📖 Wikipedia</span>
-            <span class="hbadge">🐍 Python</span>
-            <span class="hbadge">🔗 URL Reader</span>
-            <span class="hbadge">🕐 DateTime</span>
-            <span class="hbadge">📄 File Reader</span>
-            <span class="hbadge">📚 Doc Search</span>
-        </div>
+    <div class="top-toolbar">
+        <span class="tb-pill">📚 Flashcards</span>
+        <span class="tb-pill">✔️ Quiz</span>
+        <span class="tb-pill">⏱️ Timed Exam</span>
+        <span class="tb-pill">🧠 Mind Map</span>
+        <span class="tb-pill">🔄 Dynamic Workflow</span>
+        <span class="tb-pill">📈 Graphy</span>
+        <span class="tb-pill">❓ Question Generator</span>
+        <span class="tb-pill">📝 Notes</span>
+    </div>
+    <div style="text-align: center; margin-bottom: 20px;">
+        <span class="tb-pill" style="background: rgba(255,255,255,0.1); color: #fff;">💬 Chat</span>
     </div>
     """, unsafe_allow_html=True)
+
+    # Show active PDF attachment pill
+    if st.session_state.pdf_preview_path:
+        _attached_name = st.session_state.pdf_preview_filename or os.path.basename(st.session_state.pdf_preview_path)
+        st.markdown(f"""
+        <div class="upload-pill">
+            <div class="upload-pill-content">
+                <div class="upload-pill-title">📄 PDF attached: {_attached_name}</div>
+                <div class="upload-pill-desc">Your questions will now be answered based on this PDF content</div>
+            </div>
+            <button class="upload-pill-remove" onclick="window.parent.document.querySelector('#hidden_clear_btn_wrapper button').click()">Remove</button>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown('<div id="hidden_clear_btn_wrapper" style="display:none;">', unsafe_allow_html=True)
+        # Invisible button to handle clear action
+        if st.button("Clear", key="clear_pdf_btn", help="Clear PDF"):
+            st.session_state.pdf_preview_active = False
+            st.session_state.pdf_preview_path = None
+            st.session_state.pdf_preview_filename = None
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ============================================
