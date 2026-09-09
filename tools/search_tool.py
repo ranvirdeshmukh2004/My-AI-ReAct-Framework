@@ -7,7 +7,14 @@ No API key required!
 Returns the top results with title, snippet, and URL.
 """
 
-from duckduckgo_search import DDGS
+# The `duckduckgo_search` package was renamed to `ddgs`. The old package
+# still imports but its backend silently returns zero results, so prefer
+# `ddgs` and keep the legacy import only as a fallback.
+try:
+    from ddgs import DDGS
+except ImportError:  # pragma: no cover - legacy environments
+    from duckduckgo_search import DDGS
+
 from tools.base import Tool
 
 
@@ -28,7 +35,10 @@ def web_search(query: str) -> str:
             results = list(ddgs.text(query, max_results=5))
 
         if not results:
-            return "No search results found."
+            return (
+                f"No search results found for '{query}'. "
+                "Try rephrasing the query with different keywords."
+            )
 
         # Format results nicely for the LLM
         formatted = []

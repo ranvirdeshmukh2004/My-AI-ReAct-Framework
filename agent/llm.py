@@ -84,8 +84,12 @@ def _build_fallback_list():
     if ANTHROPIC_API_KEY:
         fallbacks.append("claude::claude-sonnet-4-20250514")
     if OPENROUTER_API_KEY:
+        # Verified-available OpenRouter free models. Keep this list in sync
+        # with AGENT_MODELS in app.py — a retired model ID returns 404 and
+        # burns a slot in the fallback chain on every request.
+        fallbacks.append("nvidia/nemotron-3-super-120b-a12b:free")
+        fallbacks.append("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free")
         fallbacks.append("google/gemma-4-31b-it:free")
-        fallbacks.append("meta-llama/llama-3.3-70b-instruct:free")
     return fallbacks
 
 FREE_MODEL_FALLBACKS = _build_fallback_list()
@@ -171,6 +175,43 @@ _RETRYABLE_STATUS_CODES = {429, 404, 401, 403, 500, 502, 503, 529}
 def _should_retry(status_code: int) -> bool:
     """Check if an HTTP status code is retryable."""
     return status_code in _RETRYABLE_STATUS_CODES
+
+
+# ============================================
+# Dead-provider short-circuit
+# ============================================
+
+# 401/403 means the API key is missing, invalid or revoked. That will not fix
+# itself within the process lifetime, so remember it and skip that provider on
+# every later call instead of paying a full round-trip per request.
+_AUTH_FAILED_PROVIDERS: set[str] = set()
+
+
+def _provider_of(model: str) -> str:
+    """Return the provider name a model routes to."""
+    if _is_groq_model(model):
+        return "groq"
+    if _is_claude_model(model):
+        return "anthropic"
+    return "openrouter"
+
+
+def _mark_auth_failed(model: str) -> None:
+    provider = _provider_of(model)
+    if provider not in _AUTH_FAILED_PROVIDERS:
+        _AUTH_FAILED_PROVIDERS.add(provider)
+        print(f"🔑 {provider} rejected the API key — skipping it for the rest of this session.")
+
+
+def _filter_dead_providers(models: list[str]) -> list[str]:
+    """
+    Drop models whose provider already failed authentication.
+
+    Never returns an empty list: if every provider is dead the original list is
+    kept so the caller still gets a real error trail rather than a silent no-op.
+    """
+    alive = [m for m in models if _provider_of(m) not in _AUTH_FAILED_PROVIDERS]
+    return alive or models
 
 
 def _get_wait_time(response, attempt: int) -> int:
@@ -275,6 +316,7 @@ def chat_completion(
 
     # Build fallback list: requested model first, then all fallbacks
     models_to_try = [model] + [m for m in FREE_MODEL_FALLBACKS if m != model]
+    models_to_try = _filter_dead_providers(models_to_try)
 
     error_trail = []  # Track all failures for diagnostics
     for attempt, current_model in enumerate(models_to_try):
@@ -337,6 +379,8 @@ def chat_completion(
                     continue  # Retry same Groq model
 
                 # Failed — log and move to next model
+                if response.status_code in (401, 403):
+                    _mark_auth_failed(current_model)
                 short_name = current_model.replace('groq::', '').split('/')[-1]
                 error_trail.append(f"{short_name}→{response.status_code}")
 
@@ -379,6 +423,7 @@ def stream_chat_completion(
 
     # Build fallback list
     models_to_try = [model] + [m for m in FREE_MODEL_FALLBACKS if m != model]
+    models_to_try = _filter_dead_providers(models_to_try)
 
     error_trail = []
     for attempt, current_model in enumerate(models_to_try):
@@ -422,6 +467,8 @@ def stream_chat_completion(
                                 time.sleep(wait)
                                 continue  # Retry same Groq model
 
+                            if response.status_code in (401, 403):
+                                _mark_auth_failed(current_model)
                             short_name = current_model.replace('groq::', '').replace('claude::', '').split('/')[-1]
                             error_trail.append(f"{short_name}→{response.status_code}")
 

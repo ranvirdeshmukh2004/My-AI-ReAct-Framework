@@ -66,10 +66,32 @@ def _normalize(text: str) -> str:
     return text
 
 
+# Categories whose input is code, an expression, or a path — NOT prose.
+# These must be matched EXACTLY: normalization strips punctuation, so
+# "2+2" and "2-2" would both collapse to "22" and collide, making the
+# calculator return a cached answer for a completely different expression.
+EXACT_MATCH_CATEGORIES = {
+    "calculator",
+    "python_executor",
+    "read_file",
+    "read_url",
+    "doc_search",
+}
+
+
 def _make_key(prefix: str, content: str) -> str:
-    """Generate a cache key from prefix and normalized content hash."""
-    normalized = _normalize(content)
-    content_hash = hashlib.sha256(normalized.encode()).hexdigest()[:16]
+    """
+    Generate a cache key from prefix and content hash.
+
+    Prose categories (llm, web_search, wikipedia, weather) are normalized so
+    that similar phrasings share a cache entry. Code/expression categories
+    are hashed verbatim so distinct inputs never collide.
+    """
+    if prefix in EXACT_MATCH_CATEGORIES:
+        keyed = content.strip()
+    else:
+        keyed = _normalize(content)
+    content_hash = hashlib.sha256(keyed.encode()).hexdigest()[:16]
     return f"ai_agent:{prefix}:{content_hash}"
 
 

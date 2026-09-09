@@ -10,6 +10,8 @@ Supports:
 - Any city worldwide
 """
 
+import urllib.parse
+
 import httpx
 from tools.base import Tool
 
@@ -29,7 +31,7 @@ def get_weather(location: str) -> str:
 
     try:
         # wttr.in provides free weather data in JSON format
-        url = f"https://wttr.in/{location}?format=j1"
+        url = f"https://wttr.in/{urllib.parse.quote(location)}?format=j1"
 
         with httpx.Client(timeout=15.0) as client:
             response = client.get(url, headers={"User-Agent": "AI-Agent/1.0"})
@@ -55,8 +57,18 @@ def get_weather(location: str) -> str:
         visibility = current["visibility"]
         uv_index = current["uvIndex"]
 
+        # wttr.in's nearest_area is hyper-local — "London" resolves to "Strand",
+        # "New York" to "Greenwich Village". Lead with what the user actually
+        # asked for so the agent doesn't report an unfamiliar neighbourhood,
+        # and keep the resolved station as secondary detail.
+        heading = location.strip()
+        if city and city.lower() not in heading.lower():
+            heading = f"{heading} ({city}, {country})"
+        else:
+            heading = f"{heading}, {country}"
+
         result = (
-            f"🌍 Weather for {city}, {country}\n"
+            f"🌍 Weather for {heading}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🌡️  Temperature: {temp_c}°C ({temp_f}°F)\n"
             f"🤔 Feels Like: {feels_like_c}°C\n"

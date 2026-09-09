@@ -13,6 +13,7 @@ load_dotenv()
 
 from agent.react_agent import ReactAgent
 from agent.memory import ConversationMemory
+from agent.llm import DEFAULT_MODEL
 
 # ============================================
 # App Setup
@@ -64,7 +65,7 @@ async def root():
     return {
         "status": "online",
         "agent": "AI Agent",
-        "model": "Grok (x-ai/grok-4.1-fast)",
+        "model": DEFAULT_MODEL,
     }
 
 

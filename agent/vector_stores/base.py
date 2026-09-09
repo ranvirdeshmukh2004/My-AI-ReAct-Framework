@@ -8,6 +8,12 @@ import os
 import hashlib
 from abc import ABC, abstractmethod
 
+from dotenv import load_dotenv
+
+# Load .env so vector stores resolve their keys even when this module is
+# imported without app.py having run load_dotenv() first.
+load_dotenv()
+
 
 def _get_secret(key: str, default: str = "") -> str:
     """Get a secret from st.secrets (Streamlit Cloud) or environment."""

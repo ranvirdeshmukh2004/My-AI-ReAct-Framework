@@ -16,6 +16,7 @@ import time
 from agent.llm import (
     chat_completion, stream_chat_completion,
     get_last_usage, reset_usage_accumulator, accumulate_usage,
+    DEFAULT_MODEL,
 )
 from agent.events import AgentEvent
 from agent.parser import (
@@ -92,6 +93,24 @@ def renumber_sources(text: str, offset: int) -> str:
 # ============================================
 
 PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "prompts", "react_prompt.txt")
+
+# Intermediate ReAct steps only need Thought + Action + Action Input.
+# Capping them keeps per-step latency low; the final answer is unconstrained.
+STEP_MAX_TOKENS = 1024
+
+
+def _is_tool_error(observation: str) -> bool:
+    """
+    Detect a failed tool call.
+
+    Tool failures are transient (network blip, rate limit, bad tool name) and
+    must never be cached — several categories have a TTL of 0, so a single
+    failure would otherwise be replayed forever.
+    """
+    if not observation:
+        return True
+    head = observation.lstrip()[:80].lower()
+    return head.startswith(("❌", "error:", "search error", "calculator error"))
 
 
 def load_prompt_template() -> str:
@@ -283,9 +302,7 @@ class ReactAgent:
         for iteration in range(self.max_iterations):
             t_llm = time.time()
             _react_stop = ["Observation:", "\nObservation"]
-            # Intermediate steps only need ~1024 tokens (Thought + Action + Action Input)
-            # This significantly reduces generation time per step
-            step_max_tokens = 1024
+            step_max_tokens = STEP_MAX_TOKENS
             llm_response = chat_completion(messages, model=model, stop=_react_stop, max_tokens=step_max_tokens) if model else chat_completion(messages, stop=_react_stop, max_tokens=step_max_tokens)
             llm_time_ms += (time.time() - t_llm) * 1000
             accumulate_usage(token_usage, get_last_usage())
@@ -377,19 +394,20 @@ class ReactAgent:
                     if parsed.action == "doc_search":
                         from tools.rag_search_tool import get_last_search_time_ms
                         vector_search_ms += get_last_search_time_ms()
-                    # Cache tool result
-                    self.cache.set(parsed.action, parsed.action_input, observation)
+                    # Cache tool result — but never cache a failure
+                    if not _is_tool_error(observation):
+                        self.cache.set(parsed.action, parsed.action_input, observation)
 
-                step["observation"] = observation
-                steps.append(step)
-
-                # Extract and accumulate sources from tool output
+                # Extract and accumulate sources, renumbering the observation
+                # first so the trace, the LLM and the citations all agree.
                 new_sources = extract_sources(observation)
                 if new_sources:
                     offset = len(all_sources)
                     all_sources.extend(new_sources)
-                    # Renumber sources in the observation for the LLM
                     observation = renumber_sources(observation, offset)
+
+                step["observation"] = observation
+                steps.append(step)
 
                 messages.append({"role": "assistant", "content": llm_response})
                 messages.append({
@@ -555,8 +573,9 @@ class ReactAgent:
             try:
                 for chunk in stream_chat_completion(
                     messages,
-                    model=model or chat_completion.__defaults__[0] if not model else model,
+                    model=model or DEFAULT_MODEL,
                     stop=_react_stop,
+                    max_tokens=STEP_MAX_TOKENS,
                 ):
                     llm_chunks.append(chunk)
             except Exception as e:
@@ -623,7 +642,17 @@ class ReactAgent:
                     if parsed.action == "doc_search":
                         from tools.rag_search_tool import get_last_search_time_ms
                         vector_search_ms += get_last_search_time_ms()
-                    self.cache.set(parsed.action, parsed.action_input, observation)
+                    # Never cache a failed tool call
+                    if not _is_tool_error(observation):
+                        self.cache.set(parsed.action, parsed.action_input, observation)
+
+                # Extract and accumulate sources, renumbering the observation
+                # first so the trace, the LLM and the citations all agree.
+                new_sources = extract_sources(observation)
+                if new_sources:
+                    offset = len(all_sources)
+                    all_sources.extend(new_sources)
+                    observation = renumber_sources(observation, offset)
 
                 step["observation"] = observation
                 steps.append(step)
@@ -633,13 +662,6 @@ class ReactAgent:
                     "output": observation[:300],
                     "cached": step["cached"],
                 }, iteration)
-
-                # Extract and accumulate sources
-                new_sources = extract_sources(observation)
-                if new_sources:
-                    offset = len(all_sources)
-                    all_sources.extend(new_sources)
-                    observation = renumber_sources(observation, offset)
 
                 messages.append({"role": "assistant", "content": llm_response})
                 messages.append({"role": "user", "content": f"Observation: {observation}"})

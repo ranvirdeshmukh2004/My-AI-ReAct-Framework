@@ -18,6 +18,11 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+from dotenv import load_dotenv
+
+# Load .env so this module works standalone (not only when app.py loads it first)
+load_dotenv()
+
 
 # ============================================
 # SQLite Memory (Local Fallback)
@@ -119,7 +124,14 @@ class SupabaseMemory:
         from supabase import create_client
         url = _get_secret("SUPABASE_URL")
         key = _get_secret("SUPABASE_KEY")
+        if not url or not key:
+            raise RuntimeError("SUPABASE_URL / SUPABASE_KEY not configured")
         self.client = create_client(url, key)
+        # Verify the project is actually reachable and the table exists.
+        # create_client() does no network I/O, so without this probe a dead
+        # or paused Supabase project is only discovered on the first real
+        # query — which crashes the app mid-request instead of falling back.
+        self.client.table("messages").select("id").limit(1).execute()
 
     def add_message(self, session_id: str, role: str, content: str):
         self.client.table("messages").insert({
@@ -199,11 +211,68 @@ def _get_secret(key: str, default: str = "") -> str:
 # Factory Function
 # ============================================
 
+class ResilientMemory:
+    """
+    Wraps a primary (cloud) memory backend with a local SQLite fallback.
+
+    Every call is tried against the primary first. If the primary raises —
+    the cloud project is paused, DNS fails, the network drops — the call is
+    transparently retried against SQLite so a conversation is never lost and
+    the app never crashes mid-request. Once the primary fails it is marked
+    degraded and subsequent calls go straight to SQLite.
+    """
+
+    def __init__(self, primary, fallback=None, primary_name="Supabase PostgreSQL"):
+        self._primary = primary
+        self._fallback = fallback or SQLiteMemory()
+        self._primary_name = primary_name
+        self._degraded = False
+
+    @property
+    def backend_name(self) -> str:
+        return f"{self._primary_name} (degraded → SQLite)" if self._degraded else self._primary_name
+
+    @property
+    def is_degraded(self) -> bool:
+        return self._degraded
+
+    def _call(self, method: str, *args, **kwargs):
+        if not self._degraded:
+            try:
+                return getattr(self._primary, method)(*args, **kwargs)
+            except Exception as e:
+                self._degraded = True
+                print(f"⚠️ Cloud memory failed on {method}() ({e}), falling back to SQLite")
+        return getattr(self._fallback, method)(*args, **kwargs)
+
+    def add_message(self, session_id: str, role: str, content: str):
+        return self._call("add_message", session_id, role, content)
+
+    def get_history(self, session_id: str, limit: int = 50) -> list[dict]:
+        return self._call("get_history", session_id, limit)
+
+    def get_messages_for_llm(self, session_id: str, limit: int = 20) -> list[dict]:
+        return self._call("get_messages_for_llm", session_id, limit)
+
+    def list_sessions(self) -> list[dict]:
+        return self._call("list_sessions")
+
+    def clear_session(self, session_id: str):
+        return self._call("clear_session", session_id)
+
+    def clear_all(self):
+        return self._call("clear_all")
+
+    @staticmethod
+    def new_session_id() -> str:
+        return str(uuid.uuid4())[:8]
+
+
 def get_memory():
     """
     Return the best available memory backend.
     Tries Supabase first, falls back to SQLite.
-    
+
     Returns:
         (memory_instance, backend_name) tuple
     """
@@ -212,8 +281,8 @@ def get_memory():
 
     if supabase_url and supabase_key:
         try:
-            memory = SupabaseMemory()
-            return memory, "Supabase PostgreSQL"
+            memory = ResilientMemory(SupabaseMemory())
+            return memory, memory.backend_name
         except Exception as e:
             print(f"⚠️ Supabase connection failed ({e}), falling back to SQLite")
 

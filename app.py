@@ -580,20 +580,25 @@ TOOL_ICONS = {
 }
 
 # Available models for dropdowns
+# NOTE: OpenRouter retires free model IDs regularly. Every ID below was
+# verified against https://openrouter.ai/api/v1/models — a stale ID returns
+# 404 and silently costs a retry in the fallback chain.
 AGENT_MODELS = {
     "⚡ Llama 4 Scout (Groq)": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
     "🟣 Claude (Anthropic)": "claude::claude-sonnet-4-20250514",
     "⚡ Llama 3.3 70B (Groq)": "groq::llama-3.3-70b-versatile",
-    "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
-    "Llama 3.3 70B 🆓": "meta-llama/llama-3.3-70b-instruct:free",
     "Nemotron 3 Super 120B 🆓": "nvidia/nemotron-3-super-120b-a12b:free",
-    "GPT-OSS 120B 🆓": "openai/gpt-oss-120b:free",
+    "Nemotron 3 Ultra 550B 🆓": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "Nemotron 3 Nano Omni 30B 🆓": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "Nemotron 3.5 Lightning 🆓": "nvidia/nemotron-3.5-lightning:free",
+    "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
 }
 AUDITOR_MODELS = {
     "⚡ Llama 4 Scout (Groq)": "groq::meta-llama/llama-4-scout-17b-16e-instruct",
     "🟣 Claude (Anthropic)": "claude::claude-sonnet-4-20250514",
+    "Nemotron 3 Nano Omni 30B 🆓": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "Nemotron 3 Super 120B 🆓": "nvidia/nemotron-3-super-120b-a12b:free",
     "Gemma 4 31B 🆓": "google/gemma-4-31b-it:free",
-    "Nemotron 3 Nano 30B 🆓": "nvidia/nemotron-3-nano-30b-a3b:free",
 }
 
 # ============================================
@@ -601,7 +606,6 @@ AUDITOR_MODELS = {
 # ============================================
 import re as _re_app
 import html as _html_mod
-import streamlit.components.v1 as _components
 
 
 def _get_short_name(title: str) -> str:
@@ -705,9 +709,9 @@ def render_sources_panel(sources: list) -> str:
 
 
 def copy_button(text: str, key: str):
-    """Working copy button via components.html (bypasses Streamlit JS sanitization)."""
+    """Working copy button via a sandboxed iframe (bypasses Streamlit JS sanitization)."""
     escaped = text.replace('\\', '\\\\').replace('`', '\\`').replace('$', '\\$').replace('</script>', '<\\/script>')
-    _components.html(f"""
+    st.iframe(f"""
     <button id="cp_{key}" onclick="
         navigator.clipboard.writeText(`{escaped}`).then(function(){{
             document.getElementById('cp_{key}').innerHTML='✅';
@@ -1256,7 +1260,7 @@ with st.sidebar:
 from components.pdf_viewer import render_pdf_viewer, get_query_from_selection
 
 # JS listener to receive messages from the PDF viewer iframe
-_components.html("""
+st.iframe("""
 <script>
 window.addEventListener('message', function(event) {
     if (event.data && event.data.type === 'pdf_viewer_event') {
@@ -1289,7 +1293,7 @@ window.addEventListener('message', function(event) {
     }
 });
 </script>
-""", height=0)
+""", height=1)  # st.iframe requires a positive height; 1px is effectively invisible
 
 
 # ============================================
@@ -1310,7 +1314,7 @@ if pdf_col is not None:
         # Custom Header matching screenshot
         st.markdown(f"""
         <div class="pdf-header-custom">
-            <div class="title">{_pdf_name}</div>
+            <div class="title">{_html_mod.escape(_pdf_name)}</div>
             <div class="actions">
                 <button class="pdf-action-btn">✂️ Snip</button>
                 <button class="pdf-action-btn" onclick="window.parent.document.querySelector('#hidden_hide_btn_wrapper button').click()">👁️ Hide</button>
@@ -1326,8 +1330,8 @@ if pdf_col is not None:
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # Render the PDF viewer
-        render_pdf_viewer(_pdf_path, height=720)
+        # Render the PDF viewer (needs the basename — it resolves against static/uploads)
+        render_pdf_viewer(_pdf_name, height=720)
 
         # Tip text
         st.markdown("""
@@ -1369,7 +1373,7 @@ with chat_col:
                     if step.get("thought"):
                         st.markdown(f"""<div class="trace-step thought">
                             <div class="trace-label thought">💭 Thought</div>
-                            {step['thought']}
+                            {_html_mod.escape(str(step['thought']))}
                         </div>""", unsafe_allow_html=True)
 
                     icon = TOOL_ICONS.get(step['action'], '🔧')
@@ -1377,7 +1381,7 @@ with chat_col:
                     st.markdown(f"""<div class="trace-step action">
                         <div class="trace-label action">⚡ Action</div>
                         <span class="tool-chip">{icon} {step['action']}</span>{cached_chip}
-                        <br><code>{step['action_input']}</code>
+                        <br><code>{_html_mod.escape(str(step['action_input']))}</code>
                     </div>""", unsafe_allow_html=True)
 
                     if step.get("observation"):
@@ -1388,7 +1392,7 @@ with chat_col:
                             <div class="trace-label observation">👁️ Observation</div>
                             <pre style="white-space:pre-wrap;font-size:0.78rem;color:#94a3b8;
                                 background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;
-                                margin-top:0.3rem;">{obs}</pre>
+                                margin-top:0.3rem;">{_html_mod.escape(obs)}</pre>
                         </div>""", unsafe_allow_html=True)
 
                     st.markdown(f'<div class="step-num">Step {step["iteration"]}</div>', unsafe_allow_html=True)
@@ -1400,7 +1404,7 @@ with chat_col:
                     if step.get("thought"):
                         st.markdown(f"""<div class="trace-step thought">
                             <div class="trace-label thought">💭 Final Thought{cached_note}</div>
-                            {step['thought']}
+                            {_html_mod.escape(str(step['thought']))}
                         </div>""", unsafe_allow_html=True)
 
 
@@ -1551,7 +1555,7 @@ with chat_col:
         if _is_pdf and not st.session_state.pdf_preview_active:
             _preview_html = "  •  <span style='color:#a5b4fc;font-size:0.68rem;cursor:pointer;'>👁️ Preview</span>"
         st.markdown(f"""
-        <div class="upload-pill">📄 {_fname}{_preview_html}</div>
+        <div class="upload-pill">📄 {_html_mod.escape(_fname)}{_preview_html}</div>
         """, unsafe_allow_html=True)
 
     # ============================================
@@ -1595,7 +1599,7 @@ with chat_col:
             <span class="pq-icon">📄</span>
             <div class="pq-content">
                 <div class="pq-label">Query from PDF selection</div>
-                <div class="pq-text">{_preview_text}</div>
+                <div class="pq-text">{_html_mod.escape(_preview_text)}</div>
             </div>
         </div>
         """, unsafe_allow_html=True)

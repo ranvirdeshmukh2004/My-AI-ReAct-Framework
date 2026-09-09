@@ -117,12 +117,18 @@ def parse_llm_output(text: str) -> ParseResult:
         re.DOTALL | re.IGNORECASE,
     ))
     
-    # Also check for a trailing Final Answer that goes to end of string
-    trailing_match = re.search(
-        r"Final\s*Answer\s*:\s*(.*)\Z",
-        text,
-        re.DOTALL | re.IGNORECASE,
-    )
+    # Also capture a trailing Final Answer that runs to the end of the string.
+    # Anchor the scan at the LAST "Final Answer:" so that when a model emits a
+    # draft and then a refined answer, the refined one wins. Matching with
+    # `pos` (rather than slicing) keeps .start() absolute, which the
+    # Action-vs-Final ordering check below depends on.
+    trailing_match = None
+    _final_starts = [m.start() for m in re.finditer(r"Final\s*Answer\s*:", text, re.IGNORECASE)]
+    if _final_starts:
+        trailing_match = re.compile(
+            r"Final\s*Answer\s*:\s*(.*)\Z",
+            re.DOTALL | re.IGNORECASE,
+        ).match(text, _final_starts[-1])
 
     # --- Check for Action (tool use) ---
     # Try the clean multi-line format first:
@@ -148,8 +154,8 @@ def parse_llm_output(text: str) -> ParseResult:
             (m.start() for m in final_answer_matches),
             default=float('inf')
         )
-        if trailing_match:
-            final_pos = min(final_pos, trailing_match.start())
+        if _final_starts:
+            final_pos = min(final_pos, _final_starts[0])
         
         if action_pos < final_pos:
             # Action comes first — treat as tool call
@@ -215,8 +221,14 @@ def _parse_final_answer(
     else:
         final_answer = ""
     
-    # Clean up: remove any trailing "Thought:" fragments
-    final_answer = re.split(r"\n\s*Thought\s*:", final_answer)[0].strip()
+    # Clean up: drop any trailing ReAct scaffolding the model appended after
+    # the answer. Without this an "Action: calculator" line leaks into the
+    # user-visible response.
+    final_answer = re.split(
+        r"\n\s*(?:Thought|Action(?:\s*Input)?|Observation)\s*:",
+        final_answer,
+        flags=re.IGNORECASE,
+    )[0].strip()
     
     thought = extract_thought(text)
     return AgentFinish(thought=thought, final_answer=final_answer)

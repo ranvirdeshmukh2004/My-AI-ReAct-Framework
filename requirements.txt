@@ -5,6 +5,10 @@
 # Frontend
 streamlit>=1.30.0
 
+# Optional REST API backend (server.py)
+fastapi>=0.110.0
+uvicorn>=0.27.0
+
 # HTTP client for OpenRouter API
 httpx>=0.25.0
 
@@ -12,7 +16,9 @@ httpx>=0.25.0
 python-dotenv>=1.0.0
 
 # Web search (free, no API key needed)
-duckduckgo-search>=7.0.0
+# NOTE: `duckduckgo-search` was renamed to `ddgs`; the old package still
+# imports but returns zero results, so `ddgs` is required.
+ddgs>=9.0.0
 
 # Safe math evaluation
 sympy>=1.12

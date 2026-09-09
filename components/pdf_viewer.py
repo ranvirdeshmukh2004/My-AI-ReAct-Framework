@@ -11,7 +11,6 @@ Usage:
 
 import os
 import streamlit as st
-import streamlit.components.v1 as components
 
 def render_pdf_viewer(pdf_filename: str, height: int = 750, key: str = "pdf_viewer") -> None:
     """
@@ -23,14 +22,14 @@ def render_pdf_viewer(pdf_filename: str, height: int = 750, key: str = "pdf_view
         key: Unique key for the Streamlit component.
     """
     import urllib.parse
-    encoded_filename = urllib.parse.quote(pdf_filename)
+    # Accept either a bare filename or a full path like "static/uploads/x.pdf";
+    # the viewer URL is always built relative to static/uploads, so anything
+    # but the basename would produce a broken path.
+    basename = os.path.basename(pdf_filename)
+    encoded_filename = urllib.parse.quote(basename)
     # Point the iframe to the locally hosted pdf.js viewer and pass the file path
     viewer_url = f"app/static/pdfjs/web/viewer.html?file=../../uploads/{encoded_filename}"
-    st.components.v1.iframe(
-        viewer_url,
-        height=height,
-        scrolling=False,
-    )
+    st.iframe(viewer_url, height=height)
 
 
 def get_query_from_selection(selected_text: str, mode: str = "ask") -> str:
