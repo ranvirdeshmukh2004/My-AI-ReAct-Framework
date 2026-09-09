@@ -35,6 +35,11 @@ CACHE_TTLS = {
     "read_file": 0,        # Never expires (file content is static)
     "python_executor": 0,  # Never expires (deterministic)
     "doc_search": 300,     # 5 minutes
+    "stock_quote": 60,     # 1 minute (prices move)
+    "currency_convert": 3600,   # 1 hour (ECB publishes daily)
+    "unit_convert": 0,     # Never expires (pure arithmetic)
+    "arxiv_search": 86400,      # 24 hours
+    "github_search": 1800,      # 30 minutes
 }
 
 
@@ -76,6 +81,12 @@ EXACT_MATCH_CATEGORIES = {
     "read_file",
     "read_url",
     "doc_search",
+    # Symbols and conversions are codes, not prose: "USD to EUR" and
+    # "EUR to USD" must not normalize onto the same key.
+    "stock_quote",
+    "currency_convert",
+    "unit_convert",
+    "github_search",
 }
 
 

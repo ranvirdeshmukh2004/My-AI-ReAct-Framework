@@ -97,19 +97,41 @@ The frontend features a custom-built, split-pane PDF viewer that tightly integra
 
 ---
 
-## 🛠️ Tools (9)
+## 🛠️ Tools (14)
+
+Every tool is key-free unless noted, retries on transient failures, and
+returns a `[SOURCES]` block where citation applies.
 
 | Tool | Description | API |
 |------|-------------|-----|
-| 🌐 `web_search` | Search the web | DuckDuckGo (free) |
-| 🧮 `calculator` | Safe math evaluation | SymPy (local) |
-| 🌤️ `weather` | Current weather for any city | wttr.in (free) |
-| 📖 `wikipedia` | Wikipedia article summaries | Wikipedia REST API (free) |
-| 🔗 `read_url` | Fetch & read any web page | httpx (local) |
-| 🕐 `datetime` | Time zones & date calculations | Python stdlib |
-| 📄 `read_file` | Read TXT and PDF files | PyPDF2 (local) |
-| 🐍 `python_executor` | Execute Python code (sandboxed) | subprocess (local) |
-| 📚 `doc_search` | RAG semantic search over documents | Pinecone, Weaviate, or Qdrant (cloud) |
+| 🌐 `web_search` | Web + news search. Operators: `site:`, `news:`, `recent:`. Domain de-duplicated | DuckDuckGo (free) |
+| 🧮 `calculator` | Algebra, calculus, matrices, number theory, statistics. Exact **and** decimal results | SymPy (local) |
+| 🐍 `python_executor` | Sandboxed Python with numpy/pandas. AST-validated, resource-limited | subprocess (local) |
+| 📄 `read_file` | PDF, DOCX, XLSX, CSV/TSV, JSON, Markdown, source. CSVs return shape, dtypes and stats | PyPDF2 / pandas (local) |
+| 🔗 `read_url` | Page → clean Markdown. Boilerplate stripped, SSRF-guarded, handles JSON/text | BeautifulSoup (local) |
+| 📖 `wikipedia` | Article summaries with search fallback | Wikipedia REST API (free) |
+| 📚 `doc_search` | RAG semantic search over uploaded documents | Pinecone / Weaviate / Qdrant |
+| 📈 `stock_quote` | Stocks, ETFs, indices, crypto, commodities: price, change, ranges, volume | Yahoo Finance (free) |
+| 💱 `currency_convert` | FX conversion with the rate and its quotation date | frankfurter.app / ECB (free) |
+| 🔄 `unit_convert` | 11 dimensions; MB vs MiB kept distinct. Offline and instant | local |
+| 🔬 `arxiv_search` | Papers with authors, abstract, categories, PDF links. `au:` `ti:` `cat:` | arXiv API (free) |
+| 💻 `github_search` | Repositories with stars, language, licence, last push | GitHub API (free) |
+| 🌤️ `weather` | Current conditions for any city | wttr.in (free) |
+| 🕐 `datetime` | Time zones & date arithmetic | Python stdlib |
+
+### Safety
+
+The tools that touch untrusted input are hardened rather than trusting:
+
+- **`python_executor`** validates the **AST** before execution — an import
+  allowlist plus rejection of the `__class__`/`__subclasses__` escape chain,
+  then runs in an isolated subprocess with CPU, memory and file-size limits.
+  A substring blocklist would be bypassable; this is not.
+- **`read_url`** refuses loopback, RFC1918 and cloud-metadata addresses
+  (`169.254.169.254`), and non-HTTP schemes, so the agent cannot be steered
+  into leaking instance credentials.
+- **`read_file`** resolves symlinks and `..` before checking that the target
+  is inside the project, and denies `.env` and key material outright.
 
 ---
 
@@ -183,14 +205,18 @@ My-AI-ReAct-Framework/
 │       └── qdrant_store.py       # Qdrant implementation
 ├── tools/
 │   ├── base.py                   # 🔧 Tool registry
-│   ├── search_tool.py            # 🌐 Web search
-│   ├── calculator_tool.py        # 🧮 Calculator
+│   ├── common.py                 # 🔧 Retrying HTTP, SSRF guard, ToolError
+│   ├── search_tool.py            # 🌐 Web + news search
+│   ├── calculator_tool.py        # 🧮 Symbolic & numeric math
 │   ├── weather_tool.py           # 🌤️ Weather
 │   ├── wikipedia_tool.py         # 📖 Wikipedia
-│   ├── url_reader_tool.py        # 🔗 URL reader
+│   ├── url_reader_tool.py        # 🔗 URL → Markdown
 │   ├── datetime_tool.py          # 🕐 Date/time
-│   ├── file_tool.py              # 📄 File reader
-│   ├── python_tool.py            # 🐍 Python executor
+│   ├── file_tool.py              # 📄 PDF/DOCX/XLSX/CSV/JSON reader
+│   ├── python_tool.py            # 🐍 Sandboxed Python
+│   ├── finance_tool.py           # 📈 Quotes  💱 Currency
+│   ├── convert_tool.py           # 🔄 Unit conversion
+│   ├── research_tool.py          # 🔬 arXiv  💻 GitHub
 │   └── rag_search_tool.py        # 📚 Document search (RAG)
 ├── prompts/
 │   ├── react_prompt.txt          # 📋 Agent system prompt
@@ -312,7 +338,7 @@ The agent supports **MCP** — an open standard for connecting AI apps to extern
 1. Toggle **🔌 Enable MCP** in the sidebar
 2. Click **➕ Add MCP Server** → enter server name, URL, and optional API key
 3. The agent discovers tools from that server and adds them to its toolkit
-4. Use the tools alongside the 9 built-in native tools
+4. Use the tools alongside the 14 built-in native tools
 
 ### Supported Transports
 | Transport | Works On | Use Case |
@@ -329,7 +355,7 @@ The agent supports **MCP** — an open standard for connecting AI apps to extern
 | PostgreSQL | Direct database queries |
 | Puppeteer | Full browser automation and screenshots |
 
-> MCP is additive — all 9 native tools always work. If MCP is disabled, the agent operates exactly as before.
+> MCP is additive — all 14 native tools always work. If MCP is disabled, the agent operates exactly as before.
 
 ---
 

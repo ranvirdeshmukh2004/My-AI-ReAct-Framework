@@ -23,8 +23,18 @@ ddgs>=9.0.0
 # Safe math evaluation
 sympy>=1.12
 
-# PDF reading
+# Document reading (PDF / DOCX / XLSX)
 PyPDF2>=3.0.0
+openpyxl>=3.1.0
+
+# HTML parsing & extraction for the URL reader
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+markdownify>=0.13.0
+
+# Data analysis inside the Python sandbox and CSV profiling
+numpy>=1.26.0
+pandas>=2.0.0
 
 # Data models
 pydantic>=2.0.0

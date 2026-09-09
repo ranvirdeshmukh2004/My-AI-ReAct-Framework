@@ -40,6 +40,9 @@ from tools.wikipedia_tool import wikipedia_tool
 from tools.url_reader_tool import url_reader_tool
 from tools.datetime_tool import datetime_tool
 from tools.rag_search_tool import rag_search_tool, set_document_store
+from tools.finance_tool import stock_tool, currency_tool
+from tools.convert_tool import convert_tool
+from tools.research_tool import arxiv_tool, github_tool
 from agent.auditor import run_full_audit
 from agent.validator import run_full_validation
 import re as _re
@@ -165,6 +168,12 @@ class ReactAgent:
         self.tool_registry.register(url_reader_tool)
         self.tool_registry.register(datetime_tool)
         self.tool_registry.register(rag_search_tool)
+        # Domain tools — markets, conversion and research
+        self.tool_registry.register(stock_tool)
+        self.tool_registry.register(currency_tool)
+        self.tool_registry.register(convert_tool)
+        self.tool_registry.register(arxiv_tool)
+        self.tool_registry.register(github_tool)
 
     # ── MCP Integration ──────────────────────────
 
