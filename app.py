@@ -33,57 +33,61 @@ if "theme" not in st.session_state:
 # Light and dark differ only in the token block below; every rule in the
 # stylesheet consumes tokens, so nothing else has to fork.
 _DARK_TOKENS = """
-    --bg:            #0b0d10;
-    --surface-1:     #101216;
-    --surface-2:     #15181d;
-    --surface-3:     #1c2027;
+    --bg:            #09090b;
+    --bg-sidebar:    #0c0c0e;
+    --surface-1:     #111113;
+    --surface-2:     #17171a;
+    --surface-3:     #1e1e22;
 
-    --line:          rgba(255,255,255,0.07);
-    --line-strong:   rgba(255,255,255,0.13);
+    --line:          rgba(255,255,255,0.08);
+    --line-strong:   rgba(255,255,255,0.14);
 
-    --ink:           #e8eaed;
-    --ink-muted:     #9aa4b2;
-    --ink-faint:     #6b7480;
-    --ink-ghost:     #4a515c;
+    --ink:           #f4f4f5;
+    --ink-muted:     #a1a1aa;
+    --ink-faint:     #86868c;
+    --ink-ghost:     #5c5c62;
 
-    --accent:        #7c8cf8;
-    --accent-soft:   rgba(124,140,248,0.10);
-    --accent-line:   rgba(124,140,248,0.28);
+    --accent:        #f5c518;
+    --accent-ink:    #1a1505;
+    --accent-soft:   rgba(245,197,24,0.12);
+    --accent-line:   rgba(245,197,24,0.35);
 
-    --ok:            #4ade80;
+    --ok:            #34d399;
     --warn:          #fbbf24;
     --err:           #f87171;
     --info:          #60c5f1;
 
-    --shadow:        0 6px 20px rgba(0,0,0,0.45);
+    --shadow:        0 8px 24px rgba(0,0,0,0.5);
 """
 
-# Warm paper rather than pure white, and ink rather than pure black:
+# Warm off-white rather than pure white, and ink rather than pure black:
 # maximum contrast is fatiguing to read against for long sessions.
 _LIGHT_TOKENS = """
-    --bg:            #fbfbfa;
+    --bg:            #ffffff;
+    --bg-sidebar:    #faf9f6;
     --surface-1:     #ffffff;
-    --surface-2:     #f4f5f6;
-    --surface-3:     #e9ebed;
+    --surface-2:     #f4f4f5;
+    --surface-3:     #e4e4e7;
 
-    --line:          rgba(15,23,42,0.10);
-    --line-strong:   rgba(15,23,42,0.18);
+    --line:          rgba(15,15,20,0.08);
+    --line-strong:   rgba(15,15,20,0.15);
 
-    --ink:           #16191d;
-    --ink-muted:     #4b535e;
-    --ink-faint:     #6b7480;
-    --ink-ghost:     #949ba5;
+    --ink:           #18181b;
+    --ink-muted:     #52525b;
+    --ink-faint:     #71717a;
+    --ink-ghost:     #a1a1aa;
 
-    --accent:        #4f5bd5;
-    --accent-soft:   rgba(79,91,213,0.08);
-    --accent-line:   rgba(79,91,213,0.30);
+    --accent:        #b45309;
+    --accent-ink:    #ffffff;
+    --accent-soft:   rgba(180,83,9,0.08);
+    --accent-line:   rgba(180,83,9,0.30);
 
     --ok:            #15803d;
     --warn:          #a16207;
     --err:           #b91c1c;
     --info:          #0369a1;
 
-    --shadow:        0 6px 20px rgba(15,23,42,0.12);
+    --shadow:        0 8px 24px rgba(15,23,42,0.10);
 """
 
 _TOKENS = _LIGHT_TOKENS if st.session_state.theme == "light" else _DARK_TOKENS
@@ -100,11 +104,16 @@ st.markdown("""
    ============================================================ */
 :root {
 """ + _TOKENS + """
-    --r-sm: 6px;
-    --r-md: 9px;
-    --r-lg: 13px;
+    --r-sm: 10px;
+    --r-md: 14px;
+    --r-lg: 16px;
+    --r-pill: 999px;
 
     --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: 0.001ms !important; animation-duration: 0.001ms !important; }
 }
 
 .stApp {
@@ -121,66 +130,88 @@ st.markdown("""
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
 
 /* ============================================================
-   Hero
+   Hero — compact: title + one-line subtitle + a single chip row
    ============================================================ */
-.hero { text-align: center; padding: 2.75rem 1rem 1.75rem; }
+.hero { text-align: center; padding: 2rem 1rem 1rem; }
 .hero h1 {
-    font-size: 2.15rem; font-weight: 700; margin: 0;
-    letter-spacing: -0.035em; color: var(--ink);
+    font-size: 2.35rem; font-weight: 700; margin: 0;
+    letter-spacing: -0.04em; color: var(--ink); line-height: 1.15;
 }
 .hero .subtitle {
-    color: var(--ink-faint); font-size: 0.875rem; margin-top: 0.5rem;
+    color: var(--ink-faint); font-size: 0.88rem; margin-top: 0.4rem;
     font-weight: 400; letter-spacing: 0;
 }
 .hero .badge-row {
-    display: flex; justify-content: center; gap: 0.35rem;
-    margin-top: 1.4rem; flex-wrap: wrap; max-width: 680px;
-    margin-left: auto; margin-right: auto;
+    display: flex; justify-content: flex-start; gap: 0.4rem;
+    margin-top: 1.25rem; flex-wrap: nowrap; overflow-x: auto;
+    max-width: 100%; padding: 0.2rem 1rem 0.6rem;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
 }
+.hero .badge-row::-webkit-scrollbar { display: none; }
 .hero .hbadge {
+    display: inline-flex; align-items: center; gap: 0.3rem;
     background: var(--surface-2); border: 1px solid var(--line);
-    color: var(--ink-muted); padding: 0.28rem 0.7rem; border-radius: var(--r-sm);
-    font-size: 0.7rem; font-weight: 500; letter-spacing: 0;
-    transition: border-color 0.15s ease, color 0.15s ease;
+    color: var(--ink-muted); padding: 0.36rem 0.85rem; border-radius: var(--r-pill);
+    font-size: 0.76rem; font-weight: 500; letter-spacing: 0; white-space: nowrap;
+    flex-shrink: 0; cursor: pointer;
+    transition: border-color 0.16s ease, color 0.16s ease, transform 0.16s ease, background 0.16s ease;
 }
-.hero .hbadge:hover { border-color: var(--accent-line); color: var(--ink); }
+.hero .hbadge:hover { border-color: var(--accent-line); color: var(--ink); transform: translateY(-1px); background: var(--surface-3); }
 
 /* ============================================================
    Sidebar
    ============================================================ */
 .sb-logo {
-    display: flex; align-items: center; gap: 0.6rem;
-    padding: 0.9rem 0.15rem 0.6rem;
+    display: flex; align-items: center; gap: 0.65rem;
+    padding: 0.7rem 0.15rem 0.9rem;
 }
 .sb-logo .icon {
-    font-size: 1.1rem; width: 30px; height: 30px;
+    font-size: 1rem; width: 30px; height: 30px;
     display: flex; align-items: center; justify-content: center;
     background: var(--accent-soft); border: 1px solid var(--accent-line);
+    color: var(--accent);
     border-radius: var(--r-sm);
 }
 .sb-logo .title {
-    font-size: 0.95rem; font-weight: 650; color: var(--ink);
+    font-size: 0.94rem; font-weight: 650; color: var(--ink);
     letter-spacing: -0.02em;
 }
 .sb-section {
     font-size: 0.66rem; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.11em; color: var(--ink-ghost);
-    margin: 1.35rem 0 0.5rem;
+    letter-spacing: 0.1em; color: var(--ink-ghost);
+    margin: 1.2rem 0 0.5rem;
     display: flex; align-items: center; gap: 0.35rem;
 }
+/* Compact icon + name rows (tools list) — dense, not fat cards. */
 .sb-card {
-    background: var(--surface-1); border: 1px solid var(--line);
-    border-radius: var(--r-md); padding: 0.5rem 0.7rem; margin-bottom: 0.3rem;
-    transition: border-color 0.15s ease, background 0.15s ease;
+    display: flex; align-items: flex-start; gap: 0.55rem;
+    padding: 0.42rem 0.35rem; margin-bottom: 0.05rem;
+    border-radius: var(--r-sm); border: 1px solid transparent;
+    transition: background 0.15s ease, border-color 0.15s ease;
 }
-.sb-card:hover { background: var(--surface-2); border-color: var(--line-strong); }
+.sb-card:hover { background: var(--surface-2); border-color: var(--line); }
+.sb-card .icon-box {
+    flex-shrink: 0; width: 22px; height: 22px; margin-top: 0.05rem;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.78rem;
+}
+.sb-card .body { min-width: 0; flex: 1; }
 .sb-card .name {
     font-weight: 550; font-size: 0.78rem; color: var(--ink);
     display: flex; align-items: center; gap: 0.3rem;
 }
 .sb-card .desc {
-    font-size: 0.67rem; color: var(--ink-ghost); margin-top: 0.2rem; line-height: 1.45;
+    font-size: 0.68rem; color: var(--ink-ghost); margin-top: 0.1rem; line-height: 1.4;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.sb-tools-scroll {
+    max-height: 340px; overflow-y: auto; position: relative;
+    mask-image: linear-gradient(to bottom, black calc(100% - 18px), transparent 100%);
+}
+.sb-advanced summary {
+    cursor: pointer; list-style: none;
+}
+.sb-advanced summary::-webkit-details-marker { display: none; }
 .model-card {
     background: var(--surface-1); border: 1px solid var(--line);
     border-radius: var(--r-md); padding: 0.7rem 0.85rem;
@@ -198,13 +229,16 @@ st.markdown("""
 
 .divider { border: none; border-top: 1px solid var(--line); margin: 1rem 0; }
 
-/* Infrastructure rows */
-.infra-row {
-    display: flex; align-items: center; gap: 0.5rem;
-    padding: 0.32rem 0; font-size: 0.755rem;
+/* Infrastructure — a tiny live-status line, not form fields. */
+.status-line {
+    display: flex; align-items: center; flex-wrap: wrap;
+    gap: 0.5rem; padding: 0.2rem 0.1rem; font-size: 0.71rem;
 }
+.status-item { display: inline-flex; align-items: center; gap: 0.32rem; color: var(--ink-muted); }
+.status-item .value { color: var(--ink); font-weight: 550; }
+.status-sep { color: var(--ink-ghost); }
+.infra-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.32rem 0; font-size: 0.755rem; }
 .infra-row .label { color: var(--ink-muted); flex: 1; }
-.infra-row .value { color: var(--ink); font-weight: 600; font-size: 0.71rem; }
 .infra-badge {
     display: inline-flex; align-items: center; gap: 0.3rem;
     padding: 0.16rem 0.5rem; border-radius: var(--r-sm);
@@ -279,19 +313,28 @@ st.markdown("""
    Welcome cards
    ============================================================ */
 .welcome-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;
-    max-width: 620px; margin: 1.75rem auto;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem;
+    max-width: 700px; margin: 1.5rem auto 0.5rem;
 }
 .welcome-card {
     background: var(--surface-1); border: 1px solid var(--line);
-    border-radius: var(--r-lg); padding: 0.95rem 1rem;
-    transition: border-color 0.15s ease, background 0.15s ease;
+    border-radius: var(--r-lg); padding: 1.05rem 1.15rem;
+    cursor: pointer;
+    transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease;
 }
-.welcome-card:hover { background: var(--surface-2); border-color: var(--accent-line); }
-.welcome-card .wicon { font-size: 1.1rem; margin-bottom: 0.45rem; opacity: 0.9; }
-.welcome-card .wtitle { font-size: 0.8rem; font-weight: 600; color: var(--ink); }
+.welcome-card:hover { background: var(--surface-2); border-color: var(--accent-line); transform: translateY(-1px); }
+.welcome-card .wicon {
+    display: flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; margin-bottom: 0.6rem;
+    background: var(--accent-soft); border-radius: var(--r-sm);
+    font-size: 1.05rem;
+}
+.welcome-card .wtitle { font-size: 0.92rem; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
 .welcome-card .wdesc {
-    font-size: 0.7rem; color: var(--ink-ghost); margin-top: 0.22rem; line-height: 1.45;
+    font-size: 0.79rem; color: var(--ink-faint); margin-top: 0.3rem; line-height: 1.5;
+}
+@media (max-width: 640px) {
+    .welcome-grid { grid-template-columns: 1fr; max-width: 100%; }
 }
 
 .footer {
@@ -490,10 +533,23 @@ st.markdown("""
    Streamlit widget overrides — align native chrome with the theme
    ============================================================ */
 section[data-testid="stSidebar"] {
-    background: var(--surface-1);
+    background: var(--bg-sidebar);
     border-right: 1px solid var(--line);
+    min-width: 260px !important; max-width: 260px !important;
 }
 section[data-testid="stSidebar"] > div { padding-top: 0.5rem; }
+
+/* Focus rings — accent, never the browser default blue. */
+:focus-visible {
+    outline: 2px solid var(--accent-line) !important;
+    outline-offset: 1px;
+}
+.stButton > button:focus-visible,
+.stSelectbox div[data-baseweb="select"] > div:focus-within,
+div[data-testid="stChatInput"] > div:focus-within {
+    outline: 2px solid var(--accent-line) !important;
+    outline-offset: 1px;
+}
 
 .stButton > button {
     background: var(--surface-2); color: var(--ink-muted);
@@ -533,9 +589,13 @@ div[data-testid="stStatusWidget"], div[data-testid="stStatus"] {
 
 .stSelectbox div[data-baseweb="select"] > div {
     background: var(--surface-2); border-color: var(--line);
-    border-radius: var(--r-sm); font-size: 0.76rem;
+    border-radius: var(--r-sm); font-size: 0.76rem; min-height: 40px;
+    transition: border-color 0.15s ease;
 }
+.stSelectbox div[data-baseweb="select"]:hover > div { border-color: var(--line-strong); }
 .stSlider [data-baseweb="slider"] div[role="slider"] { background: var(--accent); }
+[data-baseweb="slider"] [data-testid="stTickBarMax"],
+[data-baseweb="slider"] [data-testid="stTickBarMin"] { color: var(--ink-ghost); }
 
 /* Markdown body inside answers */
 div[data-testid="stMarkdownContainer"] p { line-height: 1.68; }
@@ -617,6 +677,9 @@ section[data-testid="stSidebar"] .sb-section { color: var(--ink-ghost); }
 section[data-testid="stSidebar"] .sb-card .desc { color: var(--ink-ghost); }
 section[data-testid="stSidebar"] .infra-row .label { color: var(--ink-muted); }
 section[data-testid="stSidebar"] .cache-stat .lbl { color: var(--ink-ghost); }
+section[data-testid="stSidebar"] .status-sep,
+section[data-testid="stSidebar"] .status-item { color: var(--ink-muted); }
+section[data-testid="stSidebar"] .status-item .value { color: var(--ink); }
 
 div[data-testid="stChatInput"] textarea { color: var(--ink) !important; }
 div[data-testid="stChatInput"] textarea::placeholder { color: var(--ink-ghost) !important; }
@@ -706,13 +769,28 @@ hr { border-color: var(--line) !important; }
 [data-testid="stChatInput"] div[data-baseweb="base-input"] {
     background: var(--surface-1) !important;
 }
-[data-testid="stChatInputSubmitButton"],
 [data-testid="stChatInputFileUploadButton"] {
     background: var(--surface-2) !important;
     color: var(--ink) !important;
     border: 1px solid var(--line) !important;
+    border-radius: var(--r-pill) !important;
 }
-[data-testid="stChatInputSubmitButton"]:hover { background: var(--surface-3) !important; }
+[data-testid="stChatInputFileUploadButton"]:hover { background: var(--surface-3) !important; }
+
+/* Send button — a filled accent circle, dim until there is text to send. */
+[data-testid="stChatInputSubmitButton"] {
+    background: var(--accent) !important;
+    color: var(--accent-ink) !important;
+    border: none !important;
+    border-radius: 50% !important;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+}
+[data-testid="stChatInputSubmitButton"]:hover { transform: scale(1.06); }
+[data-testid="stChatInputSubmitButton"]:disabled {
+    background: var(--surface-3) !important;
+    color: var(--ink-ghost) !important;
+    opacity: 0.6;
+}
 [data-testid="stChatInputInstructions"] { color: var(--ink-ghost) !important; }
 
 /* Popover trigger (the 📎 attach control) */
@@ -724,6 +802,31 @@ hr { border-color: var(--line) !important; }
 [data-testid="stPopoverButton"]:hover {
     background: var(--surface-3) !important;
     border-color: var(--line-strong) !important;
+}
+
+/* Main canvas: centered, 880px, not a dashboard. */
+[data-testid="stMainBlockContainer"] {
+    max-width: 880px; padding-top: 1.5rem;
+}
+[data-testid="stBottomBlockContainer"] { max-width: 880px; }
+
+/* ============================================================
+   Mobile — sidebar becomes an overlay drawer (Streamlit's own
+   behaviour below its responsive breakpoint); make sure the
+   drawer never clips the hero title, and give the composer
+   safe-area padding on notched devices.
+   ============================================================ */
+@media (max-width: 640px) {
+    .hero { padding: 1.5rem 0.75rem 0.75rem; }
+    .hero h1 { font-size: 1.7rem; white-space: normal; overflow: visible; }
+    [data-testid="stMainBlockContainer"] { padding-left: 0.75rem; padding-right: 0.75rem; }
+    section[data-testid="stSidebar"] {
+        min-width: 82vw !important; max-width: 82vw !important;
+        box-shadow: 0 0 0 100vmax rgba(0,0,0,0.45);
+    }
+    [data-testid="stBottom"] > div {
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1141,71 +1244,7 @@ with st.sidebar:
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-    # --- Infrastructure Status ---
-    st.markdown('<div class="sb-section">🗄️ Infrastructure</div>', unsafe_allow_html=True)
-    infra = st.session_state.agent.get_infrastructure_status()
-
-    # Memory
-    mem_color = "green" if "Supabase" in infra["memory"]["backend"] else "yellow"
-    mem_label = infra["memory"]["backend"]
-    st.markdown(f'<div class="infra-row"><span class="label">💾 Memory</span><span class="infra-badge {mem_color}"><span class="dot dot-{mem_color}"></span>{mem_label}</span></div>', unsafe_allow_html=True)
-
-    # Cache
-    cache_color = "green" if infra["cache"]["connected"] else "yellow"
-    cache_label = infra["cache"]["backend"]
-    st.markdown(f'<div class="infra-row"><span class="label">⚡ Cache</span><span class="infra-badge {cache_color}"><span class="dot dot-{cache_color}"></span>{cache_label}</span></div>', unsafe_allow_html=True)
-
-    # RAG
-    rag_color = "green" if infra["rag"]["connected"] else "red"
-    rag_label = infra["rag"]["backend"] if infra["rag"]["connected"] else "Unavailable"
-    st.markdown(f'<div class="infra-row"><span class="label">📚 RAG</span><span class="infra-badge {rag_color}"><span class="dot dot-{rag_color}"></span>{rag_label}</span></div>', unsafe_allow_html=True)
-
-    # --- Vector Database Selection ---
-    st.markdown('<div class="sb-section">📚 Vector Database</div>', unsafe_allow_html=True)
-    provider_options = ["Pinecone", "Weaviate", "Qdrant"]
-    provider_map = {"Pinecone": "pinecone", "Weaviate": "weaviate", "Qdrant": "qdrant"}
-    current_idx = 0
-    for i, name in enumerate(provider_options):
-        if provider_map[name] == st.session_state.vector_provider:
-            current_idx = i
-            break
-    selected_provider = st.selectbox(
-        "Select Provider",
-        options=provider_options,
-        index=current_idx,
-        label_visibility="collapsed",
-        help="Choose the vector database for document search (RAG)",
-    )
-    new_provider = provider_map[selected_provider]
-    if new_provider != st.session_state.vector_provider:
-        st.session_state.vector_provider = new_provider
-        from agent.react_agent import ReactAgent
-        st.session_state.agent = ReactAgent(
-            vector_provider=new_provider,
-            mcp_enabled=st.session_state.get("mcp_enabled", False),
-        )
-        st.rerun()
-
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
-
-    # --- Cache Stats ---
-    cache_stats = infra["cache"]["stats"]
-    if cache_stats["total"] > 0:
-        st.markdown('<div class="sb-section">📊 Cache Stats</div>', unsafe_allow_html=True)
-        st.markdown(f"""
-        <div class="cache-stats">
-            <div class="cache-stat"><div class="num">{cache_stats['hits']}</div><div class="lbl">Hits</div></div>
-            <div class="cache-stat"><div class="num">{cache_stats['misses']}</div><div class="lbl">Misses</div></div>
-            <div class="cache-stat"><div class="num">{cache_stats['hit_rate']}%</div><div class="lbl">Hit Rate</div></div>
-            <div class="cache-stat"><div class="num">{st.session_state.agent.cache.size()}</div><div class="lbl">Cached</div></div>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("🗑️ Clear Cache", use_container_width=True):
-            st.session_state.agent.cache.clear()
-            st.rerun()
-        st.markdown('<hr class="divider">', unsafe_allow_html=True)
-
-    # --- Model Selection ---
+    # --- Model Selection (Agent model is the primary, visible choice) ---
     st.markdown('<div class="sb-section">🤖 Agent Model</div>', unsafe_allow_html=True)
     _model_names = list(AGENT_MODELS.keys())
     _current_model_id = st.session_state.selected_model
@@ -1213,24 +1252,91 @@ with st.sidebar:
     _sel_name = st.selectbox("Agent Model", _model_names, index=_current_idx, label_visibility="collapsed")
     st.session_state.selected_model = AGENT_MODELS[_sel_name]
 
-    st.markdown('<div class="sb-section">🛡️ Auditor Model</div>', unsafe_allow_html=True)
-    _aud_names = list(AUDITOR_MODELS.keys())
-    _current_aud_id = st.session_state.selected_auditor_model
-    _current_aud_idx = list(AUDITOR_MODELS.values()).index(_current_aud_id) if _current_aud_id in AUDITOR_MODELS.values() else 0
-    _sel_aud = st.selectbox("Auditor Model", _aud_names, index=_current_aud_idx, label_visibility="collapsed")
-    st.session_state.selected_auditor_model = AUDITOR_MODELS[_sel_aud]
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-    # --- Tools ---
+    # --- Advanced: auditor model + infrastructure + vector DB + cache ---
+    with st.expander("⚙️ Advanced", expanded=False):
+        st.markdown('<div class="sb-section" style="margin-top:0;">🛡️ Auditor Model</div>', unsafe_allow_html=True)
+        _aud_names = list(AUDITOR_MODELS.keys())
+        _current_aud_id = st.session_state.selected_auditor_model
+        _current_aud_idx = list(AUDITOR_MODELS.values()).index(_current_aud_id) if _current_aud_id in AUDITOR_MODELS.values() else 0
+        _sel_aud = st.selectbox("Auditor Model", _aud_names, index=_current_aud_idx, label_visibility="collapsed")
+        st.session_state.selected_auditor_model = AUDITOR_MODELS[_sel_aud]
+
+        st.markdown('<div class="sb-section">🗄️ Infrastructure</div>', unsafe_allow_html=True)
+        infra = st.session_state.agent.get_infrastructure_status()
+
+        mem_color = "green" if "Supabase" in infra["memory"]["backend"] else "yellow"
+        mem_label = infra["memory"]["backend"]
+        cache_color = "green" if infra["cache"]["connected"] else "yellow"
+        cache_label = infra["cache"]["backend"]
+        rag_color = "green" if infra["rag"]["connected"] else "red"
+        rag_label = infra["rag"]["backend"] if infra["rag"]["connected"] else "Unavailable"
+        st.markdown(f"""
+        <div class="status-line">
+            <span class="status-item"><span class="dot dot-{mem_color}"></span>Memory <span class="value">{mem_label}</span></span>
+            <span class="status-sep">·</span>
+            <span class="status-item"><span class="dot dot-{cache_color}"></span>Cache <span class="value">{cache_label}</span></span>
+            <span class="status-sep">·</span>
+            <span class="status-item"><span class="dot dot-{rag_color}"></span>RAG <span class="value">{rag_label}</span></span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown('<div class="sb-section">📚 Vector Database</div>', unsafe_allow_html=True)
+        provider_options = ["Pinecone", "Weaviate", "Qdrant"]
+        provider_map = {"Pinecone": "pinecone", "Weaviate": "weaviate", "Qdrant": "qdrant"}
+        current_idx = 0
+        for i, name in enumerate(provider_options):
+            if provider_map[name] == st.session_state.vector_provider:
+                current_idx = i
+                break
+        selected_provider = st.selectbox(
+            "Select Provider",
+            options=provider_options,
+            index=current_idx,
+            label_visibility="collapsed",
+            help="Choose the vector database for document search (RAG)",
+        )
+        new_provider = provider_map[selected_provider]
+        if new_provider != st.session_state.vector_provider:
+            st.session_state.vector_provider = new_provider
+            from agent.react_agent import ReactAgent
+            st.session_state.agent = ReactAgent(
+                vector_provider=new_provider,
+                mcp_enabled=st.session_state.get("mcp_enabled", False),
+            )
+            st.rerun()
+
+        # --- Cache Stats ---
+        cache_stats = infra["cache"]["stats"]
+        if cache_stats["total"] > 0:
+            st.markdown('<div class="sb-section">📊 Cache Stats</div>', unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="cache-stats">
+                <div class="cache-stat"><div class="num">{cache_stats['hits']}</div><div class="lbl">Hits</div></div>
+                <div class="cache-stat"><div class="num">{cache_stats['misses']}</div><div class="lbl">Misses</div></div>
+                <div class="cache-stat"><div class="num">{cache_stats['hit_rate']}%</div><div class="lbl">Hit Rate</div></div>
+                <div class="cache-stat"><div class="num">{st.session_state.agent.cache.size()}</div><div class="lbl">Cached</div></div>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("🗑️ Clear Cache", use_container_width=True):
+                st.session_state.agent.cache.clear()
+                st.rerun()
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # --- Tools --- compact icon + name rows, scrollable with a fade
     st.markdown('<div class="sb-section">🔧 Tools</div>', unsafe_allow_html=True)
+    _tool_rows = []
     for tool in st.session_state.agent.get_available_tools():
         icon = TOOL_ICONS.get(tool["name"], "🔧")
         short_desc = tool["description"][:65]
-        st.markdown(f"""
-        <div class="sb-card">
-            <div class="name">{icon} {tool['name']}</div>
-            <div class="desc">{short_desc}...</div>
-        </div>
-        """, unsafe_allow_html=True)
+        _tool_rows.append(
+            f'<div class="sb-card"><div class="icon-box">{icon}</div>'
+            f'<div class="body"><div class="name">{tool["name"]}</div>'
+            f'<div class="desc">{short_desc}...</div></div></div>'
+        )
+    st.markdown(f'<div class="sb-tools-scroll">{"".join(_tool_rows)}</div>', unsafe_allow_html=True)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
