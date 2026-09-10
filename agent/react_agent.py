@@ -102,6 +102,13 @@ PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "prompts", "react_pr
 STEP_MAX_TOKENS = 1024
 
 
+# Stop the ReAct loop after this many consecutive failed tool calls. Without
+# it a broken tool (or a model fixated on one) burns every remaining iteration
+# retrying the same thing, which looks to the user like the agent is still
+# thinking long after the error was reported.
+MAX_CONSECUTIVE_TOOL_ERRORS = 3
+
+
 def _is_tool_error(observation: str) -> bool:
     """
     Detect a failed tool call.
@@ -300,6 +307,8 @@ class ReactAgent:
         llm_time_ms = 0
         vector_search_ms = 0
         all_sources = []  # Accumulated sources across all tool calls
+        consecutive_tool_errors = 0
+        stop_reason = "max_iterations"
         messages = [
             {"role": "system", "content": full_system_prompt},
             {"role": "user", "content": f"Answer the following query. Start with 'Thought:' and output ONE action at a time. STOP after 'Action Input:' — do NOT write 'Observation:'.\n\nUser query: {user_input}"},
@@ -418,25 +427,47 @@ class ReactAgent:
                 step["observation"] = observation
                 steps.append(step)
 
+                if _is_tool_error(observation):
+                    consecutive_tool_errors += 1
+                else:
+                    consecutive_tool_errors = 0
+
                 messages.append({"role": "assistant", "content": llm_response})
                 messages.append({
                     "role": "user",
                     "content": f"Observation: {observation}",
                 })
 
-        # ============================================
-        # Max iterations reached
-        # ============================================
-        fallback_answer = (
-            "I've reached my maximum reasoning steps. "
-            "Based on what I've gathered so far, here's my best answer:\n\n"
-        )
+                if consecutive_tool_errors >= MAX_CONSECUTIVE_TOOL_ERRORS:
+                    # Stop rather than spending the remaining iterations on a
+                    # tool that is clearly not going to succeed.
+                    stop_reason = "tool_failure"
+                    break
 
-        messages.append({
-            "role": "user",
-            "content": "You've reached the maximum number of steps. "
-                       "Please provide your Final Answer now.",
-        })
+        # ============================================
+        # Loop ended without a Final Answer
+        # ============================================
+        if stop_reason == "tool_failure":
+            fallback_answer = (
+                f"{consecutive_tool_errors} tool calls in a row failed, so I "
+                "stopped early. Based on what I have:\n\n"
+            )
+            closing_instruction = (
+                f"{consecutive_tool_errors} tool calls in a row failed. Stop "
+                "calling tools and give your Final Answer now, using what you "
+                "already know and stating plainly what could not be retrieved."
+            )
+        else:
+            fallback_answer = (
+                "I've reached my maximum reasoning steps. "
+                "Based on what I've gathered so far, here's my best answer:\n\n"
+            )
+            closing_instruction = (
+                "You've reached the maximum number of steps. "
+                "Please provide your Final Answer now."
+            )
+
+        messages.append({"role": "user", "content": closing_instruction})
 
         try:
             t_llm = time.time()
@@ -453,7 +484,9 @@ class ReactAgent:
 
         steps.append({
             "type": "max_iterations",
-            "thought": "Reached maximum iterations",
+            "thought": ("Stopped after repeated tool failures"
+                        if stop_reason == "tool_failure"
+                        else "Reached maximum iterations"),
             "final_answer": fallback_answer,
             "iteration": self.max_iterations,
             "cached": False,
@@ -562,6 +595,8 @@ class ReactAgent:
         llm_time_ms = 0
         vector_search_ms = 0
         all_sources = []
+        consecutive_tool_errors = 0
+        stop_reason = "max_iterations"
         _react_stop = ["Observation:", "\nObservation"]
         messages = [
             {"role": "system", "content": full_system_prompt},
@@ -672,15 +707,42 @@ class ReactAgent:
                     "cached": step["cached"],
                 }, iteration)
 
+                if _is_tool_error(observation):
+                    consecutive_tool_errors += 1
+                else:
+                    consecutive_tool_errors = 0
+
                 messages.append({"role": "assistant", "content": llm_response})
                 messages.append({"role": "user", "content": f"Observation: {observation}"})
+
+                if consecutive_tool_errors >= MAX_CONSECUTIVE_TOOL_ERRORS:
+                    yield AgentEvent("thinking", {
+                        "status": f"{consecutive_tool_errors} tool calls failed — "
+                                  "answering with what is available",
+                    }, iteration)
+                    stop_reason = "tool_failure"
+                    break
 
         # ============================================
         # Max iterations reached (fallback)
         # ============================================
         if final_answer is None:
-            fallback_answer = "I've reached my maximum reasoning steps. Based on what I've gathered:\n\n"
-            messages.append({"role": "user", "content": "You've reached the maximum number of steps. Please provide your Final Answer now."})
+            if stop_reason == "tool_failure":
+                fallback_answer = (
+                    f"{consecutive_tool_errors} tool calls in a row failed, so I "
+                    "stopped early. Based on what I have:\n\n"
+                )
+                closing_instruction = (
+                    f"{consecutive_tool_errors} tool calls in a row failed. Stop "
+                    "calling tools and give your Final Answer now, using what you "
+                    "already know and stating plainly what could not be retrieved."
+                )
+            else:
+                fallback_answer = ("I've reached my maximum reasoning steps. "
+                                   "Based on what I've gathered:\n\n")
+                closing_instruction = ("You've reached the maximum number of steps. "
+                                       "Please provide your Final Answer now.")
+            messages.append({"role": "user", "content": closing_instruction})
             try:
                 t_llm = time.time()
                 final_response = chat_completion(messages, model=model) if model else chat_completion(messages)
@@ -695,8 +757,14 @@ class ReactAgent:
                 fallback_answer += "Unable to generate a summary."
 
             final_answer = fallback_answer
-            steps.append({"type": "max_iterations", "thought": "Reached maximum iterations",
-                          "final_answer": fallback_answer, "iteration": self.max_iterations, "cached": False})
+            steps.append({
+                "type": "max_iterations",
+                "thought": ("Stopped after repeated tool failures"
+                            if stop_reason == "tool_failure"
+                            else "Reached maximum iterations"),
+                "final_answer": fallback_answer,
+                "iteration": self.max_iterations, "cached": False,
+            })
             self.memory.add_message(session_id, "assistant", fallback_answer)
 
             yield AgentEvent("answer_start", {}, -1)

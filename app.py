@@ -25,17 +25,14 @@ st.set_page_config(
 # ============================================
 # Premium Dark Theme CSS
 # ============================================
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+# Theme must be resolved before the stylesheet is emitted, so it is read
+# here rather than in init_session_state() (which runs further down).
+if "theme" not in st.session_state:
+    st.session_state.theme = "dark"
 
-/* ============================================================
-   Design tokens — one restrained accent, a true neutral ramp.
-   The previous theme leaned on purple→pink gradients and glow;
-   this trades that for ink, paper and a single quiet indigo, so
-   the content is what carries the page.
-   ============================================================ */
-:root {
+# Light and dark differ only in the token block below; every rule in the
+# stylesheet consumes tokens, so nothing else has to fork.
+_DARK_TOKENS = """
     --bg:            #0b0d10;
     --surface-1:     #101216;
     --surface-2:     #15181d;
@@ -58,6 +55,51 @@ st.markdown("""
     --err:           #f87171;
     --info:          #60c5f1;
 
+    --shadow:        0 6px 20px rgba(0,0,0,0.45);
+"""
+
+# Warm paper rather than pure white, and ink rather than pure black:
+# maximum contrast is fatiguing to read against for long sessions.
+_LIGHT_TOKENS = """
+    --bg:            #fbfbfa;
+    --surface-1:     #ffffff;
+    --surface-2:     #f4f5f6;
+    --surface-3:     #e9ebed;
+
+    --line:          rgba(15,23,42,0.10);
+    --line-strong:   rgba(15,23,42,0.18);
+
+    --ink:           #16191d;
+    --ink-muted:     #4b535e;
+    --ink-faint:     #6b7480;
+    --ink-ghost:     #949ba5;
+
+    --accent:        #4f5bd5;
+    --accent-soft:   rgba(79,91,213,0.08);
+    --accent-line:   rgba(79,91,213,0.30);
+
+    --ok:            #15803d;
+    --warn:          #a16207;
+    --err:           #b91c1c;
+    --info:          #0369a1;
+
+    --shadow:        0 6px 20px rgba(15,23,42,0.12);
+"""
+
+_TOKENS = _LIGHT_TOKENS if st.session_state.theme == "light" else _DARK_TOKENS
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ============================================================
+   Design tokens — one restrained accent, a true neutral ramp.
+   The previous theme leaned on purple→pink gradients and glow;
+   this trades that for ink, paper and a single quiet indigo, so
+   the content is what carries the page.
+   ============================================================ */
+:root {
+""" + _TOKENS + """
     --r-sm: 6px;
     --r-md: 9px;
     --r-lg: 13px;
@@ -520,8 +562,169 @@ div[data-testid="stMarkdownContainer"] td {
 }
 div[data-testid="stMarkdownContainer"] th { background: var(--surface-2); font-weight: 600; }
 
-/* Streamlit's top toolbar / deploy chrome */
-#MainMenu, footer, header[data-testid="stHeader"] { visibility: hidden; height: 0; }
+/* Streamlit's top chrome.
+   The header must stay in the layout: it hosts the control that reopens a
+   collapsed sidebar, so hiding it strands the user with no way back. Make
+   it transparent instead and hide only the menu/deploy buttons. */
+header[data-testid="stHeader"] {
+    background: transparent;
+    height: 2.6rem;
+}
+/* Hide only the toolbar's own actions — not the toolbar itself, which is
+   the container the sidebar expand button lives in. */
+#MainMenu,
+[data-testid="stToolbarActions"],
+[data-testid="stAppDeployButton"],
+[data-testid="stToolbarActionButton"],
+footer { display: none !important; }
+
+/* Sidebar open/close affordances.
+   Streamlit decides when each is shown (expand only while collapsed), so
+   only visibility and colour are forced here — forcing `display` would
+   leave the expand button stranded on screen with the sidebar open. */
+[data-testid="stExpandSidebarButton"],
+[data-testid="stSidebarCollapseButton"] {
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+[data-testid="stExpandSidebarButton"] button,
+[data-testid="stSidebarCollapseButton"] button {
+    background: var(--surface-2) !important;
+    border: 1px solid var(--line-strong) !important;
+    border-radius: var(--r-sm) !important;
+    color: var(--ink) !important;
+    opacity: 1 !important;
+}
+[data-testid="stExpandSidebarButton"] button:hover,
+[data-testid="stSidebarCollapseButton"] button:hover {
+    background: var(--surface-3) !important;
+    border-color: var(--accent-line) !important;
+}
+[data-testid="stExpandSidebarButton"] svg,
+[data-testid="stSidebarCollapseButton"] svg { fill: currentColor; }
+
+/* ============================================================
+   Light-mode corrections for Streamlit's own chrome, which is
+   built for a dark base and would otherwise render white-on-white.
+   ============================================================ */
+.stApp, .stApp p, .stApp li, .stApp span, .stApp label,
+.stApp h1, .stApp h2, .stApp h3, .stApp h4 { color: var(--ink); }
+
+div[data-testid="stMarkdownContainer"] { color: var(--ink); }
+
+section[data-testid="stSidebar"] * { color: var(--ink); }
+section[data-testid="stSidebar"] .sb-section { color: var(--ink-ghost); }
+section[data-testid="stSidebar"] .sb-card .desc { color: var(--ink-ghost); }
+section[data-testid="stSidebar"] .infra-row .label { color: var(--ink-muted); }
+section[data-testid="stSidebar"] .cache-stat .lbl { color: var(--ink-ghost); }
+
+div[data-testid="stChatInput"] textarea { color: var(--ink) !important; }
+div[data-testid="stChatInput"] textarea::placeholder { color: var(--ink-ghost) !important; }
+
+div[data-baseweb="popover"], div[data-baseweb="menu"], ul[role="listbox"] {
+    background: var(--surface-1) !important;
+    border: 1px solid var(--line) !important;
+}
+div[data-baseweb="popover"] li, ul[role="listbox"] li { color: var(--ink) !important; }
+div[data-baseweb="popover"] li:hover, ul[role="listbox"] li:hover {
+    background: var(--surface-2) !important;
+}
+
+div[data-testid="stExpanderDetails"] { background: transparent; }
+.stSelectbox div[data-baseweb="select"] * { color: var(--ink); }
+.stCaption, [data-testid="stCaptionContainer"] { color: var(--ink-faint) !important; }
+
+/* Tooltip shadow follows the theme */
+.src-tip { box-shadow: var(--shadow); }
+
+/* Containers Streamlit paints from its own base theme. These must be
+   repainted explicitly or light mode shows dark panels behind light text. */
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stMainBlockContainer"],
+[data-testid="stBottomBlockContainer"],
+[data-testid="stBottom"] > div {
+    background: var(--bg);
+}
+
+[data-testid="stChatMessageAvatarUser"],
+[data-testid="stChatMessageAvatarAssistant"] {
+    background: var(--surface-3) !important;
+    color: var(--ink) !important;
+}
+
+/* Code blocks: st.code and syntax-highlighted fences */
+pre, code, .stCodeBlock, [data-testid="stCode"] {
+    background: var(--surface-1) !important;
+    color: var(--ink) !important;
+}
+.stCodeBlock pre, [data-testid="stCode"] pre {
+    border: 1px solid var(--line) !important;
+}
+
+/* Status / expander headers and their labels */
+[data-testid="stStatus"] summary,
+[data-testid="stExpander"] summary { color: var(--ink) !important; }
+[data-testid="stStatus"] [data-testid="stMarkdownContainer"] p { color: var(--ink-muted) !important; }
+
+/* Toggles, sliders and popovers */
+[data-baseweb="checkbox"] div[aria-checked="true"] { background: var(--accent) !important; }
+[data-testid="stPopoverBody"] {
+    background: var(--surface-1) !important;
+    border: 1px solid var(--line) !important;
+}
+[data-testid="stFileUploaderDropzone"] {
+    background: var(--surface-2) !important;
+    border: 1px dashed var(--line-strong) !important;
+    color: var(--ink-muted) !important;
+}
+hr { border-color: var(--line) !important; }
+
+/* Tooltips are rendered in a portal outside .stApp, so they inherit
+   Streamlit's base theme and turn into a black box in light mode. */
+[data-testid="stTooltipContent"],
+[data-baseweb="tooltip"],
+[role="tooltip"] {
+    background: var(--surface-3) !important;
+    color: var(--ink) !important;
+    border: 1px solid var(--line-strong) !important;
+    border-radius: var(--r-sm) !important;
+    box-shadow: var(--shadow) !important;
+}
+[data-testid="stTooltipContent"] * ,
+[role="tooltip"] * { color: var(--ink) !important; }
+
+/* Chat input: the textarea and its wrapper both paint a background. */
+[data-testid="stChatInputTextArea"] {
+    background: transparent !important;
+    color: var(--ink) !important;
+}
+[data-testid="stChatInputTextArea"]::placeholder { color: var(--ink-ghost) !important; }
+[data-testid="stChatInput"],
+[data-testid="stChatInput"] > div,
+[data-testid="stChatInput"] div[data-baseweb="textarea"],
+[data-testid="stChatInput"] div[data-baseweb="base-input"] {
+    background: var(--surface-1) !important;
+}
+[data-testid="stChatInputSubmitButton"],
+[data-testid="stChatInputFileUploadButton"] {
+    background: var(--surface-2) !important;
+    color: var(--ink) !important;
+    border: 1px solid var(--line) !important;
+}
+[data-testid="stChatInputSubmitButton"]:hover { background: var(--surface-3) !important; }
+[data-testid="stChatInputInstructions"] { color: var(--ink-ghost) !important; }
+
+/* Popover trigger (the 📎 attach control) */
+[data-testid="stPopoverButton"] {
+    background: var(--surface-2) !important;
+    color: var(--ink) !important;
+    border: 1px solid var(--line) !important;
+}
+[data-testid="stPopoverButton"]:hover {
+    background: var(--surface-3) !important;
+    border-color: var(--line-strong) !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -924,6 +1127,18 @@ with st.sidebar:
         <div class="title">AI Agent</div>
     </div>
     """, unsafe_allow_html=True)
+
+    # --- Appearance ---
+    _is_light = st.session_state.theme == "light"
+    if st.button(
+        "🌙  Dark mode" if _is_light else "☀️  Light mode",
+        key="theme_toggle",
+        use_container_width=True,
+        help="Switch between light and dark appearance",
+    ):
+        st.session_state.theme = "dark" if _is_light else "light"
+        st.rerun()
+
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
     # --- Infrastructure Status ---
@@ -1666,6 +1881,7 @@ with chat_col:
                     status = st.status("⚡ Starting...", expanded=True)
                     answer_container = st.empty()
                     _step_count = 0
+                    _stream_error = None
 
                     for event in st.session_state.agent.run_stream(
                         user_input=prompt,
@@ -1726,10 +1942,28 @@ with chat_col:
                             validation_data = event.data.get("data")
 
                         elif event.type == "error":
-                            st.error(f"❌ {event.data.get('message', 'Unknown error')}")
+                            # Close the status panel, otherwise the spinner keeps
+                            # running forever after the stream has already failed.
+                            _stream_error = event.data.get("message", "Unknown error")
+                            status.update(label="❌ Failed", state="error", expanded=False)
+                            st.error(f"❌ {_stream_error}")
 
                         elif event.type == "done":
                             result = event.data.get("result", {})
+
+                    # The generator can end without a "done" event (an error, or a
+                    # caller-side break). Leaving the status "running" is what makes
+                    # the UI look like it is still thinking, so settle it here.
+                    if result is None and _stream_error is None:
+                        status.update(
+                            label="⚠️ Stopped without producing an answer",
+                            state="error", expanded=False,
+                        )
+                    elif result is not None:
+                        try:
+                            status.update(state="complete")
+                        except Exception:
+                            pass
 
                 else:
                     # ==========================================
